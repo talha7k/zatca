@@ -11,6 +11,7 @@ import type {
   ZatcaApiConfig,
   ZatcaCredentials,
 } from '../types.js';
+import { createUnzip } from 'node:zlib';
 
 const SANDBOX_URL = 'https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal';
 const PRODUCTION_URL = 'https://gw-fatoora.zatca.gov.sa/e-invoicing/core-portal';
@@ -34,6 +35,7 @@ export class ZatcaHttpClient {
     body?: Record<string, unknown>,
     credentials?: ZatcaCredentials,
     extraHeaders?: Record<string, string>,
+    otp?: string,
   ): Promise<{ status: number; body: string; headers: Record<string, string> }> {
     const url = `${this.baseUrl}${path}`;
 
@@ -45,7 +47,9 @@ export class ZatcaHttpClient {
       ...extraHeaders,
     };
 
-    if (credentials) {
+    if (otp) {
+      headers['OTP'] = otp;
+    } else if (credentials) {
       const auth = Buffer.from(
         `${credentials.binarySecurityToken}:${credentials.secret}`,
       ).toString('base64');
@@ -63,7 +67,29 @@ export class ZatcaHttpClient {
         signal: controller.signal,
       });
 
-      const responseBody = await response.text();
+      let responseBody: string;
+      try {
+        // Try text() first — works for uncompressed responses
+        responseBody = await response.text();
+      } catch {
+        // Bun sometimes fails to decompress gzip responses
+        // Manually decompress using Node.js zlib
+        try {
+          const arrayBuf = await response.arrayBuffer();
+          const chunks: Buffer[] = [];
+          const gunzip = createUnzip();
+          gunzip.on('data', (chunk: Buffer) => chunks.push(chunk));
+          await new Promise<void>((resolve, reject) => {
+            gunzip.on('end', resolve);
+            gunzip.on('error', reject);
+            gunzip.end(Buffer.from(arrayBuf));
+          });
+          responseBody = Buffer.concat(chunks).toString('utf8');
+        } catch {
+          // Last resort — return raw status
+          responseBody = `HTTP ${response.status}`;
+        }
+      }
       const responseHeaders: Record<string, string> = {};
       response.headers.forEach((value, key) => {
         responseHeaders[key] = value;

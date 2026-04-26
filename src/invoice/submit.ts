@@ -37,6 +37,8 @@ export interface SubmitOptions {
   privateKeyPem: string;
   /** ZATCA CSID certificate in PEM format */
   certificatePem: string;
+  /** ZATCA CA signature on the public key (hex) — extracted from certificate */
+  certificateSignature: string;
   /** ZATCA API credentials (binarySecurityToken + secret) */
   credentials: ZatcaCredentials;
   /** ZATCA API configuration (environment, URLs, timeout) */
@@ -70,7 +72,7 @@ export interface SubmitResult {
  * 1. Validate invoice data
  * 2. Generate UBL 2.1 XML
  * 3. Sign with ECDSA-SHA256 (xml-crypto + Node.js crypto)
- * 4. Generate QR code TLV (Phase 2, 8 tags)
+ * 4. Generate QR code TLV (Phase 2, 9 tags)
  * 5. Submit to ZATCA (clearance for B2B/381, reporting for B2C/388)
  * 6. Update hash chain on success
  */
@@ -79,6 +81,7 @@ export async function submitInvoice(options: SubmitOptions): Promise<SubmitResul
     invoice,
     privateKeyPem,
     certificatePem,
+    certificateSignature,
     credentials,
     apiConfig,
     hashChainState,
@@ -97,7 +100,7 @@ export async function submitInvoice(options: SubmitOptions): Promise<SubmitResul
     certificatePem,
   });
 
-  // 4. Generate QR code data (Phase 2 — 8 tags)
+  // 4. Generate QR code data (Phase 2 — 9 tags)
   const qrCodeBase64 = generatePhase2TLV({
     sellerName: invoice.supplier.nameEn,
     vatNumber: invoice.supplier.vatNumber,
@@ -107,6 +110,7 @@ export async function submitInvoice(options: SubmitOptions): Promise<SubmitResul
     invoiceHash,
     signatureValue,
     publicKey: extractPublicKey(certificatePem),
+    certificateSignature,
   });
 
   // 5. Submit to ZATCA

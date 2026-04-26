@@ -18,11 +18,31 @@ export class ComplianceApi extends ZatcaHttpClient {
    *
    * POST /compliance
    * Body: { csr: string } — Base64-encoded CSR
+   *
+   * When `otp` is provided, uses OTP header instead of Basic Auth.
+   * This is required for the /compliance endpoint.
    */
-  async requestCSID(csr: string): Promise<ZatcaCSIDResponse> {
-    const response = await this.request('POST', '/compliance', { csr });
+  async requestCSID(csr: string, otp?: string): Promise<ZatcaCSIDResponse> {
+    // ZATCA expects the CSR to be base64-encoded (base64-of-PEM)
+    const response = await this.request('POST', '/compliance', { csr: btoa(csr) }, undefined, undefined, otp);
 
-    const data = JSON.parse(response.body);
+    let data: any;
+    try {
+      data = JSON.parse(response.body);
+    } catch {
+      // ZATCA returned non-JSON (e.g., HTML error page or plain text like "Invalid Request")
+      return {
+        binarySecurityToken: '',
+        secret: '',
+        requestId: undefined,
+        status: 'REJECTED',
+        error: {
+          code: `HTTP_${response.status}`,
+          category: 'HTTP-Errors',
+          message: response.body,
+        },
+      };
+    }
 
     return {
       binarySecurityToken: data.binarySecurityToken || '',
@@ -58,7 +78,16 @@ export class ComplianceApi extends ZatcaHttpClient {
       credentials,
     );
 
-    const data = JSON.parse(response.body);
+    let data: any;
+    try {
+      data = JSON.parse(response.body);
+    } catch {
+      return {
+        valid: false,
+        messages: [`HTTP ${response.status}: ${response.body}`],
+      };
+    }
+
     const errors: Array<{ message: string }> = data.validationResults?.errorMessages || [];
     const warnings: Array<{ message: string }> = data.validationResults?.warningMessages || [];
 
@@ -88,7 +117,22 @@ export class ComplianceApi extends ZatcaHttpClient {
       credentials,
     );
 
-    const data = JSON.parse(response.body);
+    let data: any;
+    try {
+      data = JSON.parse(response.body);
+    } catch {
+      return {
+        binarySecurityToken: '',
+        secret: '',
+        requestId: undefined,
+        status: 'REJECTED',
+        error: {
+          code: `HTTP_${response.status}`,
+          category: 'HTTP-Errors',
+          message: response.body,
+        },
+      };
+    }
 
     return {
       binarySecurityToken: data.binarySecurityToken || '',

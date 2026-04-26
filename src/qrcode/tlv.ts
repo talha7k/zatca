@@ -13,6 +13,7 @@
  *   6 = Invoice hash (SHA-256 hex) — Phase 2 only
  *   7 = ECDSA signature (Base64) — Phase 2 only
  *   8 = Public key (Base64) — Phase 2 only
+ *   9 = ZATCA CA signature on public key — Phase 2 only
  */
 
 // ---------------------------------------------------------------------------
@@ -58,7 +59,8 @@ export function hexToBase64(hex: string): string {
   const bytes = new Uint8Array(
     hex.match(/.{2}/g)!.map((byte) => parseInt(byte, 16)),
   );
-  return Buffer.from(bytes).toString('base64');
+  // Works in both Node.js (16+) and all browsers — no Buffer needed
+  return btoa(String.fromCharCode(...bytes));
 }
 
 // ---------------------------------------------------------------------------
@@ -90,13 +92,14 @@ export function generatePhase1TLV(data: {
 }
 
 /**
- * Generate Phase 2 QR TLV as Base64 string (8 tags).
+ * Generate Phase 2 QR TLV as Base64 string (9 tags).
  *
  * Phase 2 (compliance / production):
  * Tags 1–5: same as Phase 1
  * Tag 6: invoice hash (SHA-256 hex)
- * Tag 7: ECDSA cryptographic stamp (Base64)
- * Tag 8: seller public key (Base64)
+ * Tag 7: ECDSA signature (IEEE P1363 r||s bytes)
+ * Tag 8: ECDSA public key bytes
+ * Tag 9: ZATCA CA signature on public key
  */
 export function generatePhase2TLV(data: {
   sellerName: string;
@@ -107,6 +110,7 @@ export function generatePhase2TLV(data: {
   invoiceHash: string;
   signatureValue: string;
   publicKey: string;
+  certificateSignature: string; // Tag 9 — ZATCA CA signature on public key
 }): string {
   const hex = [
     encodeTLV(1, data.sellerName),
@@ -117,6 +121,7 @@ export function generatePhase2TLV(data: {
     encodeTLV(6, data.invoiceHash),
     encodeTLV(7, data.signatureValue),
     encodeTLV(8, data.publicKey),
+    encodeTLV(9, data.certificateSignature),
   ].join('');
 
   return hexToBase64(hex);

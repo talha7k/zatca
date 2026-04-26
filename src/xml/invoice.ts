@@ -100,7 +100,7 @@ function xmlSignature(): string {
 function xmlPostalAddress(addr: PostalAddress, indent: string): string {
   return `${indent}<cac:PostalAddress>
 ${indent}  <cbc:StreetName>${escapeXml(addr.street)}</cbc:StreetName>
-${indent}  <cbc:AdditionalStreetName>${escapeXml(addr.building)}</cbc:AdditionalStreetName>
+${indent}  <cbc:BuildingNumber>${escapeXml(addr.building)}</cbc:BuildingNumber>
 ${indent}  <cbc:CitySubdivisionName>${escapeXml(addr.district)}</cbc:CitySubdivisionName>
 ${indent}  <cbc:CityName>${escapeXml(addr.city)}</cbc:CityName>
 ${indent}  <cbc:PostalZone>${escapeXml(addr.postalCode)}</cbc:PostalZone>
@@ -117,15 +117,23 @@ ${indent}</cac:PostalAddress>`;
 function xmlSupplierParty(supplier: SupplierInfo): string {
   const crBlock = supplier.crNumber
     ? `\n      <cac:PartyIdentification>
-        <cbc:ID schemeID="CR">${escapeXml(supplier.crNumber)}</cbc:ID>
+        <cbc:ID schemeID="CRN">${escapeXml(supplier.crNumber)}</cbc:ID>
       </cac:PartyIdentification>`
     : '';
 
   return `  <cac:AccountingSupplierParty>
     <cac:Party>
 ${crBlock}
-      <cbc:RegistrationName>${escapeXml(supplier.nameAr)}</cbc:RegistrationName>
-${xmlPostalAddress(supplier.address, '      ')}
+      <cac:PostalAddress>
+        <cbc:StreetName>${escapeXml(supplier.address.street)}</cbc:StreetName>
+        <cbc:BuildingNumber>${escapeXml(supplier.address.building)}</cbc:BuildingNumber>
+        <cbc:CitySubdivisionName>${escapeXml(supplier.address.district)}</cbc:CitySubdivisionName>
+        <cbc:CityName>${escapeXml(supplier.address.city)}</cbc:CityName>
+        <cbc:PostalZone>${escapeXml(supplier.address.postalCode)}</cbc:PostalZone>
+        <cac:Country>
+          <cbc:IdentificationCode>${escapeXml(supplier.address.countryCode)}</cbc:IdentificationCode>
+        </cac:Country>
+      </cac:PostalAddress>
       <cac:PartyTaxScheme>
         <cbc:CompanyID>${escapeXml(supplier.vatNumber)}</cbc:CompanyID>
         <cac:TaxScheme>
@@ -133,7 +141,7 @@ ${xmlPostalAddress(supplier.address, '      ')}
         </cac:TaxScheme>
       </cac:PartyTaxScheme>
       <cac:PartyLegalEntity>
-        <cbc:RegistrationName>${escapeXml(supplier.nameEn)}</cbc:RegistrationName>
+        <cbc:RegistrationName>${escapeXml(supplier.nameAr)}</cbc:RegistrationName>
       </cac:PartyLegalEntity>
     </cac:Party>
   </cac:AccountingSupplierParty>`;
@@ -170,7 +178,7 @@ function xmlTaxTotalBlocks(
   currencyCode: string,
   subtotals: TaxSubtotal[],
 ): string {
-  const subtotalBlocks = subtotals.map(xmlTaxSubtotal).join('\n');
+  const subtotalBlocks = subtotals.map((s) => xmlTaxSubtotal(s, currencyCode)).join('\n');
 
   // First TaxTotal with breakdown
   const withSubtotals = `  <cac:TaxTotal>
@@ -189,10 +197,10 @@ ${subtotalBlocks}
 /**
  * Single tax subtotal block.
  */
-function xmlTaxSubtotal(subtotal: TaxSubtotal): string {
+function xmlTaxSubtotal(subtotal: TaxSubtotal, currencyCode: string): string {
   return `    <cac:TaxSubtotal>
-      <cbc:TaxableAmount currencyID="">${formatAmount(subtotal.taxableAmount)}</cbc:TaxableAmount>
-      <cbc:TaxAmount currencyID="">${formatAmount(subtotal.taxAmount)}</cbc:TaxAmount>
+      <cbc:TaxableAmount currencyID="${escapeXml(currencyCode)}">${formatAmount(subtotal.taxableAmount)}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="${escapeXml(currencyCode)}">${formatAmount(subtotal.taxAmount)}</cbc:TaxAmount>
       <cac:TaxCategory>
         <cbc:ID>${subtotal.taxCategoryId}</cbc:ID>
         <cbc:Percent>${formatAmount(subtotal.percent)}</cbc:Percent>
@@ -260,9 +268,11 @@ function buildInvoiceXml(invoice: InvoiceData): string {
     ? `\n${additionalDocs}\n`
     : '\n';
 
+  // Note: Using empty AccountingCustomerParty for simplified (B2C) invoices.
+  // ZATCA requires this element even for simplified invoices where no customer details exist.
   const customerBlock = invoice.customer
     ? `\n${xmlCustomerParty(invoice.customer)}`
-    : '';
+    : `\n  <cac:AccountingCustomerParty>\n  </cac:AccountingCustomerParty>`;
 
   const invoiceLineBlocks = invoice.invoiceLines
     .map((line) => xmlInvoiceLine(line, invoice.currencyCode))

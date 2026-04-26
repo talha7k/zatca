@@ -15,8 +15,7 @@ import type { Phase1QRData, Phase2QRData } from '../types.js';
 /**
  * Generate QR code data (Base64 TLV string) for a Phase 2 invoice.
  *
- * Maps the `Phase2QRData` type (which uses ZATCA field names like
- * `cryptographicStamp`) to the TLV tag structure.
+ * Maps the `Phase2QRData` type to the TLV tag structure.
  */
 export function generateQRCodeData(data: Phase2QRData): string {
   try {
@@ -27,8 +26,9 @@ export function generateQRCodeData(data: Phase2QRData): string {
       totalWithVat: data.totalWithVat,
       vatTotal: data.vatTotal,
       invoiceHash: data.invoiceHash,
-      signatureValue: data.cryptographicStamp,
-      publicKey: data.publicKey,
+      signatureValue: data.ecdsaSignature,
+      publicKey: data.ecdsaPublicKey,
+      certificateSignature: data.certificateSignature,
     });
   } catch (error) {
     throw new ZatcaError(

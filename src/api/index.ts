@@ -43,8 +43,8 @@ export class ZatcaApiClient extends ZatcaHttpClient {
 
   // ---- Compliance ----
 
-  async requestComplianceCSID(csr: string) {
-    return this.compliance.requestCSID(csr);
+  async requestComplianceCSID(csr: string, otp?: string) {
+    return this.compliance.requestCSID(csr, otp);
   }
 
   async verifyCompliance(

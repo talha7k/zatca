@@ -2,3 +2,8 @@ node_modules/
 dist/
 .turbo/
 *.tsbuildinfo
+.DS_Store
+sdk/
+.env
+*.log
+tests/integration/debug-*

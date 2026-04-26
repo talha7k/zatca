@@ -184,6 +184,7 @@ export interface CSRParams {
   country: string;
   commonName: string;
   invoiceType: string;
+  businessCategory?: string; // e.g. 'Technology', 'Food', 'Supply activities'
   location: {
     city: string;
     district: string;
@@ -211,9 +212,10 @@ export interface Phase1QRData {
 }
 
 export interface Phase2QRData extends Phase1QRData {
-  invoiceHash: string;        // Tag 6
-  cryptographicStamp: string; // Tag 7 — ECDSA signature
-  publicKey: string;          // Tag 8 — Public key
+  invoiceHash: string;            // Tag 6 — SHA-256 hash of invoice
+  ecdsaSignature: string;         // Tag 7 — ECDSA signature (IEEE P1363)
+  ecdsaPublicKey: string;         // Tag 8 — ECDSA public key
+  certificateSignature: string;   // Tag 9 — ZATCA CA signature on public key
 }
 
 // ---- Hash Chain Types ----
