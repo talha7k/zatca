@@ -1,5 +1,5 @@
 {
-  "name": "zatca-phase2",
+  "name": "@talha7k/zatca",
   "version": "0.1.0",
   "description": "ZATCA Phase 2 e-invoicing integration for Saudi Arabia — TypeScript, framework-agnostic, production-grade",
   "main": "dist/index.js",
@@ -48,6 +48,14 @@
   ],
   "author": "talha7k",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/talha7k/zatca-phase2.git"
+  },
+  "bugs": {
+    "url": "https://github.com/talha7k/zatca-phase2/issues"
+  },
+  "homepage": "https://github.com/talha7k/zatca-phase2#readme",
   "engines": {
     "node": ">=18.0.0"
   }

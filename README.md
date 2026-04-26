@@ -1,13 +1,13 @@
-# zatca-phase2
+# @talha7k/zatca
 
 ZATCA Phase 2 e-invoicing integration for Saudi Arabia. Framework-agnostic TypeScript library.
 
 ## Installation
 
 ```bash
-npm install zatca-phase2
+npm install @talha7k/zatca
 # or
-pnpm add zatca-phase2
+pnpm add @talha7k/zatca
 ```
 
 ## Quick Start
@@ -15,7 +15,7 @@ pnpm add zatca-phase2
 ### Generate Invoice XML
 
 ```typescript
-import { generateInvoiceXml } from 'zatca-phase2';
+import { generateInvoiceXml } from '@talha7k/zatca';
 
 const xml = generateInvoiceXml({
   invoiceNumber: 'INV-001',
@@ -56,7 +56,7 @@ const xml = generateInvoiceXml({
 ### Sign and Submit
 
 ```typescript
-import { signInvoice, ZatcaApiClient } from 'zatca-phase2';
+import { signInvoice, ZatcaApiClient } from '@talha7k/zatca';
 
 // Sign
 const { signedXml, invoiceHash, signatureValue } = signInvoice({
@@ -76,7 +76,7 @@ const result = await client.submitForReporting(
 ### Full Pipeline (Orchestrator)
 
 ```typescript
-import { submitInvoice } from 'zatca-phase2';
+import { submitInvoice } from '@talha7k/zatca';
 
 const result = await submitInvoice({
   invoice: invoiceData,
