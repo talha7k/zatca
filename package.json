@@ -1,13 +1,14 @@
 {
   "name": "@talha7k/zatca",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "description": "ZATCA Phase 2 e-invoicing integration for Saudi Arabia — TypeScript, framework-agnostic, production-grade",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
     }
   },
   "scripts": {
@@ -57,9 +58,15 @@
     "invoice",
     "qr-code",
     "digital-signature",
-    "ecdsa"
+    "ecdsa",
+    "tax",
+    "typescript",
+    "phase1",
+    "phase2",
+    "xml-dsig",
+    "ber-tlv"
   ],
-  "author": "talha7k",
+  "author": { "name": "talha7k", "email": "talha7k@gmail.com", "url": "https://github.com/talha7k" },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -71,5 +78,6 @@
   "homepage": "https://github.com/talha7k/zatca-phase2#readme",
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "funding": { "type": "github", "url": "https://github.com/sponsors/talha7k" }
 }

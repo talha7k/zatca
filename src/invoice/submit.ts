@@ -87,65 +87,94 @@ export async function submitInvoice(options: SubmitOptions): Promise<SubmitResul
     hashChainState,
   } = options;
 
-  // 1. Validate invoice data
-  validateInvoice(invoice);
-
-  // 2. Generate UBL 2.1 XML
-  const xml = generateInvoiceXml(invoice);
-
-  // 3. Sign with ECDSA-SHA256
-  const { signedXml, invoiceHash, signatureValue } = signInvoice({
-    xml,
-    privateKeyPem,
-    certificatePem,
-  });
-
-  // 4. Generate QR code data (Phase 2 — 9 tags)
-  const qrCodeBase64 = generatePhase2TLV({
-    sellerName: invoice.supplier.nameEn,
-    vatNumber: invoice.supplier.vatNumber,
-    timestamp: `${invoice.issueDate}T${invoice.issueTime}Z`,
-    totalWithVat: invoice.payableAmount.toFixed(2),
-    vatTotal: invoice.taxAmount.toFixed(2),
-    invoiceHash,
-    signatureValue,
-    publicKey: extractPublicKey(certificatePem),
-    certificateSignature,
-  });
-
-  // 5. Submit to ZATCA
-  const client = new ZatcaApiClient(apiConfig);
-  const base64Invoice = Buffer.from(signedXml).toString('base64');
-
-  const request = {
-    invoiceHash,
-    uuid: invoice.uuid,
-    invoice: base64Invoice,
-  };
-
-  // B2B invoices (type 381) use clearance; B2C (388) use reporting
-  const isB2B = invoice.invoiceTypeCode === '381';
-  const zatcaResult = isB2B
-    ? await client.submitForClearance(credentials, request)
-    : await client.submitForReporting(credentials, request);
-
-  // 6. Update hash chain on success
-  let newHashChainState: HashChainState | undefined;
-  if (zatcaResult.success) {
-    newHashChainState = {
-      lastHash: invoiceHash,
-      lastUuid: invoice.uuid,
-      counter: (hashChainState?.counter ?? 0) + 1,
-      updatedAt: new Date().toISOString(),
-    };
+  // --- Input validation (throws directly, no generic wrapper) ---
+  if (!options.invoice) {
+    throw new ZatcaError('invoice data is required', ZatcaErrorCode.VALIDATION_ERROR);
+  }
+  if (!options.privateKeyPem) {
+    throw new ZatcaError('privateKeyPem is required for signing', ZatcaErrorCode.VALIDATION_ERROR);
+  }
+  if (!options.certificatePem) {
+    throw new ZatcaError('certificatePem is required for signing', ZatcaErrorCode.VALIDATION_ERROR);
+  }
+  if (!options.certificateSignature) {
+    throw new ZatcaError('certificateSignature is required for QR code generation', ZatcaErrorCode.VALIDATION_ERROR);
+  }
+  if (!options.credentials) {
+    throw new ZatcaError('credentials (binarySecurityToken + secret) are required', ZatcaErrorCode.VALIDATION_ERROR);
+  }
+  if (!options.apiConfig) {
+    throw new ZatcaError('apiConfig is required', ZatcaErrorCode.VALIDATION_ERROR);
   }
 
-  return {
-    success: zatcaResult.success,
-    signedXml,
-    invoiceHash,
-    qrCodeBase64,
-    zatcaResult,
-    newHashChainState,
-  };
+  try {
+    // 1. Validate invoice data
+    validateInvoice(invoice);
+
+    // 2. Generate UBL 2.1 XML
+    const xml = generateInvoiceXml(invoice);
+
+    // 3. Sign with ECDSA-SHA256
+    const { signedXml, invoiceHash, signatureValue } = signInvoice({
+      xml,
+      privateKeyPem,
+      certificatePem,
+    });
+
+    // 4. Generate QR code data (Phase 2 — 9 tags)
+    const qrCodeBase64 = generatePhase2TLV({
+      sellerName: invoice.supplier.nameEn,
+      vatNumber: invoice.supplier.vatNumber,
+      timestamp: `${invoice.issueDate}T${invoice.issueTime}Z`,
+      totalWithVat: invoice.payableAmount.toFixed(2),
+      vatTotal: invoice.taxAmount.toFixed(2),
+      invoiceHash,
+      signatureValue,
+      publicKey: extractPublicKey(certificatePem),
+      certificateSignature,
+    });
+
+    // 5. Submit to ZATCA
+    const client = new ZatcaApiClient(apiConfig);
+    const base64Invoice = Buffer.from(signedXml).toString('base64');
+
+    const request = {
+      invoiceHash,
+      uuid: invoice.uuid,
+      invoice: base64Invoice,
+    };
+
+    // B2B invoices (type 381) use clearance; B2C (388) use reporting
+    const isB2B = invoice.invoiceTypeCode === '381';
+    const zatcaResult = isB2B
+      ? await client.submitForClearance(credentials, request)
+      : await client.submitForReporting(credentials, request);
+
+    // 6. Update hash chain on success
+    let newHashChainState: HashChainState | undefined;
+    if (zatcaResult.success) {
+      newHashChainState = {
+        lastHash: invoiceHash,
+        lastUuid: invoice.uuid,
+        counter: (hashChainState?.counter ?? 0) + 1,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    return {
+      success: zatcaResult.success,
+      signedXml,
+      invoiceHash,
+      qrCodeBase64,
+      zatcaResult,
+      newHashChainState,
+    };
+  } catch (error) {
+    if (error instanceof ZatcaError) throw error;
+    throw new ZatcaError(
+      `Invoice submission pipeline failed: ${(error as Error).message}`,
+      ZatcaErrorCode.SIGN_ERROR,
+      error,
+    );
+  }
 }

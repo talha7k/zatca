@@ -397,15 +397,37 @@ export function extractPublicKey(certificatePem: string): string {
  * @param masterKey - 64-char hex string (32 bytes = 256 bits)
  */
 export function encryptPrivateKey(privateKeyPem: string, masterKey: string): string {
-  const key = Buffer.from(masterKey, 'hex');
-  const iv = crypto.randomBytes(12); // GCM standard: 12-byte IV
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  if (!privateKeyPem) {
+    throw new ZatcaError(
+      'privateKeyPem is required for encryption',
+      ZatcaErrorCode.VALIDATION_ERROR,
+    );
+  }
 
-  let encrypted = cipher.update(privateKeyPem, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
+  if (!masterKey || !/^[0-9a-fA-F]{64}$/.test(masterKey)) {
+    throw new ZatcaError(
+      'masterKey must be a 64-character hex string (32 bytes for AES-256)',
+      ZatcaErrorCode.VALIDATION_ERROR,
+    );
+  }
 
-  const authTag = cipher.getAuthTag().toString('hex');
-  return `${iv.toString('hex')}:${authTag}:${encrypted}`;
+  try {
+    const key = Buffer.from(masterKey, 'hex');
+    const iv = crypto.randomBytes(12); // GCM standard: 12-byte IV
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+
+    let encrypted = cipher.update(privateKeyPem, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+
+    const authTag = cipher.getAuthTag().toString('hex');
+    return `${iv.toString('hex')}:${authTag}:${encrypted}`;
+  } catch (error) {
+    throw new ZatcaError(
+      `Failed to encrypt private key: ${(error as Error).message}`,
+      ZatcaErrorCode.CERT_STORAGE_ERROR,
+      error,
+    );
+  }
 }
 
 /**
@@ -417,24 +439,40 @@ export function encryptPrivateKey(privateKeyPem: string, masterKey: string): str
  * @param masterKey - 64-char hex string (32 bytes = 256 bits)
  */
 export function decryptPrivateKey(encryptedData: string, masterKey: string): string {
-  const [ivHex, authTagHex, data] = encryptedData.split(':');
-
-  if (!ivHex || !authTagHex || !data) {
+  const parts = encryptedData.split(':');
+  if (parts.length !== 3 || !parts[0] || !parts[1]) {
     throw new ZatcaError(
       'Invalid encrypted data format — expected iv:authTag:data',
       ZatcaErrorCode.CERT_LOAD_ERROR,
     );
   }
+  const [ivHex, authTagHex, data] = parts;
 
-  const key = Buffer.from(masterKey, 'hex');
-  const iv = Buffer.from(ivHex, 'hex');
-  const authTag = Buffer.from(authTagHex, 'hex');
+  if (!masterKey || !/^[0-9a-fA-F]{64}$/.test(masterKey)) {
+    throw new ZatcaError(
+      'masterKey must be a 64-character hex string (32 bytes for AES-256)',
+      ZatcaErrorCode.VALIDATION_ERROR,
+    );
+  }
 
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-  decipher.setAuthTag(authTag);
+  try {
+    const key = Buffer.from(masterKey, 'hex');
+    const iv = Buffer.from(ivHex, 'hex');
+    const authTag = Buffer.from(authTagHex, 'hex');
 
-  let decrypted = decipher.update(data, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(authTag);
 
-  return decrypted;
+    let decrypted = data ? decipher.update(data, 'hex', 'utf8') : '';
+    decrypted += decipher.final('utf8');
+
+    return decrypted;
+  } catch (error) {
+    if (error instanceof ZatcaError) throw error;
+    throw new ZatcaError(
+      `Failed to decrypt private key: ${(error as Error).message}. This usually means the masterKey is incorrect or the data is corrupted.`,
+      ZatcaErrorCode.CERT_LOAD_ERROR,
+      error,
+    );
+  }
 }

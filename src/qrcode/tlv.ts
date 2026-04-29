@@ -31,6 +31,10 @@
  * Value is UTF-8 encoded.
  */
 export function encodeTLV(tag: number, value: string): string {
+  if (value === null || value === undefined) {
+    throw new Error(`encodeTLV: value for tag ${tag} must not be null or undefined`);
+  }
+
   const tagHex = tag.toString(16).padStart(2, '0').toUpperCase();
 
   const valueBytes = new TextEncoder().encode(value);
@@ -56,9 +60,13 @@ export function encodeTLV(tag: number, value: string): string {
  * Convert a hex string to a Base64-encoded string.
  */
 export function hexToBase64(hex: string): string {
-  const bytes = new Uint8Array(
-    hex.match(/.{2}/g)!.map((byte) => parseInt(byte, 16)),
-  );
+  if (!hex || hex.length === 0) return '';
+  if (hex.length % 2 !== 0) {
+    throw new Error('hexToBase64: hex string must have even length');
+  }
+  const pairs = hex.match(/.{2}/g);
+  if (!pairs) return '';
+  const bytes = new Uint8Array(pairs.map((byte) => parseInt(byte, 16)));
   // Works in both Node.js (16+) and all browsers — no Buffer needed
   return btoa(String.fromCharCode(...bytes));
 }
@@ -80,15 +88,19 @@ export function generatePhase1TLV(data: {
   totalWithVat: string;
   vatTotal: string;
 }): string {
-  const hex = [
-    encodeTLV(1, data.sellerName),
-    encodeTLV(2, data.vatNumber),
-    encodeTLV(3, data.timestamp),
-    encodeTLV(4, data.totalWithVat),
-    encodeTLV(5, data.vatTotal),
-  ].join('');
+  try {
+    const hex = [
+      encodeTLV(1, data.sellerName),
+      encodeTLV(2, data.vatNumber),
+      encodeTLV(3, data.timestamp),
+      encodeTLV(4, data.totalWithVat),
+      encodeTLV(5, data.vatTotal),
+    ].join('');
 
-  return hexToBase64(hex);
+    return hexToBase64(hex);
+  } catch (error) {
+    throw new Error(`Phase 1 QR TLV generation failed: ${(error as Error).message}`);
+  }
 }
 
 /**
@@ -112,17 +124,21 @@ export function generatePhase2TLV(data: {
   publicKey: string;
   certificateSignature: string; // Tag 9 — ZATCA CA signature on public key
 }): string {
-  const hex = [
-    encodeTLV(1, data.sellerName),
-    encodeTLV(2, data.vatNumber),
-    encodeTLV(3, data.timestamp),
-    encodeTLV(4, data.totalWithVat),
-    encodeTLV(5, data.vatTotal),
-    encodeTLV(6, data.invoiceHash),
-    encodeTLV(7, data.signatureValue),
-    encodeTLV(8, data.publicKey),
-    encodeTLV(9, data.certificateSignature),
-  ].join('');
+  try {
+    const hex = [
+      encodeTLV(1, data.sellerName),
+      encodeTLV(2, data.vatNumber),
+      encodeTLV(3, data.timestamp),
+      encodeTLV(4, data.totalWithVat),
+      encodeTLV(5, data.vatTotal),
+      encodeTLV(6, data.invoiceHash),
+      encodeTLV(7, data.signatureValue),
+      encodeTLV(8, data.publicKey),
+      encodeTLV(9, data.certificateSignature),
+    ].join('');
 
-  return hexToBase64(hex);
+    return hexToBase64(hex);
+  } catch (error) {
+    throw new Error(`Phase 2 QR TLV generation failed: ${(error as Error).message}`);
+  }
 }

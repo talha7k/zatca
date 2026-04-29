@@ -1,18 +1,46 @@
 # @talha7k/zatca
 
-ZATCA Phase 2 e-invoicing integration for Saudi Arabia. Framework-agnostic TypeScript library.
+![npm version](https://img.shields.io/npm/v/@talha7k/zatca?style=flat-square)
+![license](https://img.shields.io/npm/l/@talha7k/zatca?style=flat-square)
+![typescript](https://img.shields.io/badge/TypeScript-5.7-blue?style=flat-square)
+![node](https://img.shields.io/badge/Node.js-%3E%3D18-green?style=flat-square)
+
+**ZATCA Phase 2 e-invoicing integration for Saudi Arabia.**
+
+TypeScript library for Saudi Arabia's ZATCA (Fatoora) e-invoicing system. Covers the full pipeline: UBL 2.1 XML generation, ECDSA digital signing, QR code encoding, ZATCA API integration, certificate/CSR management, and hash chain tracking.
+
+Framework-agnostic — works with Next.js, Express, Fastify, or any Node.js runtime.
+
+## Features
+
+- **UBL 2.1 XML** — Standard and simplified tax invoices, credit notes
+- **ECDSA-SHA256 Signing** — XML-DSig compliant digital signatures
+- **ZATCA API Client** — Compliance CSID, reporting (B2C), clearance (B2B), status checks
+- **QR Code Generation** — Phase 1 (5-tag) and Phase 2 (9-tag) BER-TLV encoding
+- **Certificate Management** — CSR generation, key pair creation, private key encryption
+- **Hash Chain** — Previous Invoice Hash (PIH) tracking with validation
+- **Full Pipeline Orchestrator** — `submitInvoice()` handles the entire flow
+- **Full TypeScript** — Strict mode, all types exported
 
 ## Installation
 
 ```bash
+# npm
 npm install @talha7k/zatca
-# or
+
+# pnpm
 pnpm add @talha7k/zatca
+
+# yarn
+yarn add @talha7k/zatca
+
+# For QR image generation (optional)
+npm install qrcode
 ```
 
 ## Quick Start
 
-### Generate Invoice XML
+### 1. Generate Invoice XML
 
 ```typescript
 import { generateInvoiceXml } from '@talha7k/zatca';
@@ -53,27 +81,43 @@ const xml = generateInvoiceXml({
 });
 ```
 
-### Sign and Submit
+### 2. Sign Invoice
 
 ```typescript
-import { signInvoice, ZatcaApiClient } from '@talha7k/zatca';
+import { signInvoice } from '@talha7k/zatca';
 
-// Sign
 const { signedXml, invoiceHash, signatureValue } = signInvoice({
   xml,
-  privateKeyPem: '...',
-  certificatePem: '...',
+  privateKeyPem: '-----BEGIN EC PRIVATE KEY-----\n...',
+  certificatePem: '-----BEGIN CERTIFICATE-----\n...',
+  qrData: {
+    sellerName: 'Test Company',
+    vatNumber: '300000000000003',
+    timestamp: '2025-04-26T14:30:00Z',
+    totalWithVat: '115.00',
+    vatTotal: '15.00',
+    certificateSignature: '...', // hex string from ZATCA certificate
+  },
 });
+```
 
-// Submit to ZATCA
+### 3. Submit to ZATCA
+
+```typescript
+import { ZatcaApiClient } from '@talha7k/zatca';
+
 const client = new ZatcaApiClient({ environment: 'sandbox' });
+
+// B2C simplified invoice
 const result = await client.submitForReporting(
   { binarySecurityToken: '...', secret: '...' },
   { invoiceHash, uuid: '...', invoice: Buffer.from(signedXml).toString('base64') },
 );
+
+console.log(result.success, result.response?.clearanceDateTime);
 ```
 
-### Full Pipeline (Orchestrator)
+### 4. Full Pipeline (One Call)
 
 ```typescript
 import { submitInvoice } from '@talha7k/zatca';
@@ -82,6 +126,7 @@ const result = await submitInvoice({
   invoice: invoiceData,
   privateKeyPem: '...',
   certificatePem: '...',
+  certificateSignature: '...', // hex — extracted from ZATCA certificate
   credentials: { binarySecurityToken: '...', secret: '...' },
   apiConfig: { environment: 'sandbox' },
   hashChainState: { lastHash: '', lastUuid: '', counter: 0, updatedAt: new Date().toISOString() },
@@ -90,32 +135,114 @@ const result = await submitInvoice({
 console.log(result.success, result.invoiceHash, result.qrCodeBase64);
 ```
 
+### 5. Onboarding Flow (CSR → Compliance → Production)
+
+```typescript
+import { generateECDSAKeyPair, generateCSR, ZatcaApiClient } from '@talha7k/zatca';
+
+// Step 1: Generate key pair and CSR
+const { privateKey, publicKey } = generateECDSAKeyPair();
+const csrResult = generateCSR({
+  organizationNameAr: 'شركة الاختبار',
+  organizationNameEn: 'Test Company',
+  vatNumber: '300000000000003',
+  crNumber: '1234567890',
+  country: 'SA',
+  commonName: 'Test Company',
+  invoiceType: '0100000',
+  location: {
+    city: 'Riyadh',
+    district: 'Al Olaya',
+    street: 'King Fahd Road',
+    buildingNumber: '1234',
+    postalCode: '12211',
+  },
+  egsSerialNumber: 'SN-001',
+});
+
+// Step 2: Request Compliance CSID
+const client = new ZatcaApiClient({ environment: 'sandbox' });
+const compliance = await client.requestComplianceCSID(csrResult.csr, '123456');
+
+// Step 3: Request Production CSID
+const production = await client.requestProductionCSID(
+  { binarySecurityToken: compliance.binarySecurityToken, secret: compliance.secret },
+  compliance.requestId!,
+);
+```
+
+## Error Handling
+
+```typescript
+import { submitInvoice, ZatcaError, ZatcaErrorCode } from '@talha7k/zatca';
+
+try {
+  const result = await submitInvoice(options);
+} catch (err) {
+  if (err instanceof ZatcaError) {
+    console.error(`[${err.code}] ${err.message}`);
+    // Common codes: SIGN_ERROR, VALIDATION_ERROR, API_ERROR, CERTIFICATE_ERROR
+  }
+  throw err;
+}
+```
+
+All public functions wrap errors in `ZatcaError` with structured codes — no raw Node.js errors leak through. Each error includes:
+
+- `err.code` — Machine-readable error category (`ZatcaErrorCode`)
+- `err.message` — Human-readable description of what failed
+- `err.details` — Original cause (Error object, API response, or validation errors array)
+
+### Error Codes
+
+| Code | Constant | Description |
+|------|----------|-------------|
+| `VALIDATION_ERR` | `ZatcaErrorCode.VALIDATION_ERROR` | Invalid input (missing fields, bad formats) |
+| `CERT_GEN_ERR` | `ZatcaErrorCode.CERT_GEN_ERROR` | CSR or key generation failure |
+| `CERT_STORAGE_ERR` | `ZatcaErrorCode.CERT_STORAGE_ERROR` | Key encryption failure |
+| `CERT_LOAD_ERR` | `ZatcaErrorCode.CERT_LOAD_ERROR` | Key decryption or format error |
+| `SIGN_ERR` | `ZatcaErrorCode.SIGN_ERROR` | XML signing or pipeline failure |
+| `API_ERR` | `ZatcaErrorCode.API_ERROR` | ZATCA API returned error or parse failure |
+| `API_CONN_ERR` | `ZatcaErrorCode.API_CONNECTION_ERROR` | Network/connection failure |
+| `API_TIMEOUT_ERR` | `ZatcaErrorCode.API_TIMEOUT` | Request timeout |
+| `XML_GEN_ERR` | `ZatcaErrorCode.XML_GEN_ERROR` | XML generation failure |
+| `QR_GEN_ERR` | `ZatcaErrorCode.QR_GEN_ERROR` | QR/TLV generation failure |
+| `HASH_CHAIN_ERR` | `ZatcaErrorCode.HASH_CHAIN_ERROR` | Hash chain integrity failure |
+
 ## API Reference
 
 ### XML Generation
-- `generateInvoiceXml(invoice)` — Generate UBL 2.1 invoice XML
-- `generateCreditNoteXml(creditNote)` — Generate UBL 2.1 credit note XML
+- `generateInvoiceXml(invoice: InvoiceData)` — Generate UBL 2.1 invoice XML
+- `generateCreditNoteXml(creditNote: CreditNoteData)` — Generate UBL 2.1 credit note XML
 
 ### Signing
-- `signInvoice({ xml, privateKeyPem, certificatePem })` — ECDSA-SHA256 XML-DSig
-- `computeInvoiceHash(xml)` — SHA-256 hash (excludes UBLExtensions)
+- `signInvoice({ xml, privateKeyPem, certificatePem, qrData? })` — ECDSA-SHA256 XML-DSig signing
+- `computeInvoiceHash(xml)` — SHA-256 hex hash (excludes UBLExtensions)
+- `computeInvoiceHashBase64(xml)` — SHA-256 base64 hash
+- `verifySignature(signedXml, publicKeyPem)` — Verify signature (for debugging)
 
 ### QR Codes
-- `generateQRCodeData(phase2Data)` — Phase 2 QR (8 tags) as Base64 TLV
-- `generatePhase1QRCodeData(phase1Data)` — Phase 1 QR (5 tags)
-- `encodeTLV(tag, value)` — Low-level TLV encoder
+- `generateQRCodeData(data: Phase2QRData)` — Phase 2 QR (9 tags) as Base64 TLV
+- `generatePhase1QRCodeData(data: Phase1QRData)` — Phase 1 QR (5 tags)
+- `generatePhase2QRImage(data, options?)` — Phase 2 QR as PNG data URL (requires `qrcode`)
+- `generatePhase1QRImage(data, options?)` — Phase 1 QR as PNG data URL (requires `qrcode`)
+- `encodeTLV(tag, value)` — Low-level BER-TLV encoder
+- `hexToBase64(hex)` / `base64ToHex(base64)` — Encoding utilities
 
 ### API Client
-- `new ZatcaApiClient(config)` — Unified client
-- `.submitForReporting(credentials, request)` — B2C simplified invoices
-- `.submitForClearance(credentials, request)` — B2B standard invoices
-- `.requestComplianceCSID(csr)` — Get compliance certificate
+- `new ZatcaApiClient(config: ZatcaApiConfig)` — Unified API client
+- `.submitForReporting(credentials, request)` — B2C simplified invoices (type 388)
+- `.submitForClearance(credentials, request)` — B2B standard invoices (type 381)
+- `.requestComplianceCSID(csr, otp?)` — Get compliance certificate
 - `.requestProductionCSID(credentials, requestId)` — Get production certificate
-- `.checkInvoiceStatus(credentials, uuid)` — Check submission status
+- `.verifyCompliance(credentials, invoiceHash, uuid, invoice)` — Verify compliance CSID
+- `.checkInvoiceStatus(credentials, uuid)` — Check submission status by UUID
+- `.checkByRequestId(credentials, requestId)` — Check status by request ID
 
 ### Certificate
-- `generateCSR(params)` — Generate CSR with ZATCA extensions
+- `generateCSR(params: CSRParams)` — Generate CSR with ZATCA extensions
 - `generateECDSAKeyPair()` — Generate ECDSA P-256 key pair
+- `extractPublicKey(certificatePem)` — Extract raw public key from certificate
 - `encryptPrivateKey(pem, masterKey)` / `decryptPrivateKey(data, masterKey)` — AES-256-GCM
 
 ### Hash Chain
@@ -124,7 +251,15 @@ console.log(result.success, result.invoiceHash, result.qrCodeBase64);
 - `validateHashChain(invoices)` — Verify chain integrity
 
 ### Invoice Orchestrator
-- `submitInvoice(options)` — Full pipeline: validate → XML → sign → QR → submit
+- `submitInvoice(options: SubmitOptions)` — Full pipeline: validate → XML → sign → QR → submit → hash chain
+
+### Utilities
+- `formatDate(date)` / `formatTime(date)` / `formatISODateTime(date)` — Date formatting
+- `validateInvoice(data)` / `validateCSRParams(params)` / `validateCredentials(creds)` — Validation
+
+### Errors
+- `ZatcaError` — Base error class with `code`, `message`, `details`
+- `ZatcaErrorCode` — Enum: see [Error Codes](#error-codes) table above
 
 ## Requirements
 
@@ -132,4 +267,4 @@ console.log(result.success, result.invoiceHash, result.qrCodeBase64);
 
 ## License
 
-MIT
+[MIT](./LICENSE) © talha7k

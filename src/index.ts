@@ -9,7 +9,7 @@
  * - Certificate/CSR management (node-forge)
  * - Hash chain management
  *
- * @module @esellar/zatca
+ * @module @talha7k/zatca
  */
 
 // Types

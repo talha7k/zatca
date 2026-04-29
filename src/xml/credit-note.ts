@@ -121,12 +121,12 @@ ${indent}</cac:PostalAddress>`;
 
 /**
  * AccountingSupplierParty block with both Arabic and English names,
- * PartyIdentification with schemeID="CR", and PartyLegalEntity.
+ * PartyIdentification with schemeID="CRN", and PartyLegalEntity.
  */
 function xmlSupplierParty(supplier: SupplierInfo): string {
   const crBlock = supplier.crNumber
     ? `\n      <cac:PartyIdentification>
-        <cbc:ID schemeID="CR">${escapeXml(supplier.crNumber)}</cbc:ID>
+        <cbc:ID schemeID="CRN">${escapeXml(supplier.crNumber)}</cbc:ID>
       </cac:PartyIdentification>`
     : '';
 
@@ -179,7 +179,7 @@ function xmlTaxTotalBlocks(
   currencyCode: string,
   subtotals: TaxSubtotal[],
 ): string {
-  const subtotalBlocks = subtotals.map(xmlTaxSubtotal).join('\n');
+  const subtotalBlocks = subtotals.map((s) => xmlTaxSubtotal(s, currencyCode)).join('\n');
 
   // First TaxTotal with breakdown
   const withSubtotals = `  <cac:TaxTotal>
@@ -198,10 +198,10 @@ ${subtotalBlocks}
 /**
  * Single tax subtotal block.
  */
-function xmlTaxSubtotal(subtotal: TaxSubtotal): string {
+function xmlTaxSubtotal(subtotal: TaxSubtotal, currencyCode: string): string {
   return `    <cac:TaxSubtotal>
-      <cbc:TaxableAmount currencyID="">${formatAmount(subtotal.taxableAmount)}</cbc:TaxableAmount>
-      <cbc:TaxAmount currencyID="">${formatAmount(subtotal.taxAmount)}</cbc:TaxAmount>
+      <cbc:TaxableAmount currencyID="${escapeXml(currencyCode)}">${formatAmount(subtotal.taxableAmount)}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="${escapeXml(currencyCode)}">${formatAmount(subtotal.taxAmount)}</cbc:TaxAmount>
       <cac:TaxCategory>
         <cbc:ID>${subtotal.taxCategoryId}</cbc:ID>
         <cbc:Percent>${formatAmount(subtotal.percent)}</cbc:Percent>

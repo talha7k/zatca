@@ -23,8 +23,38 @@ export class ComplianceApi extends ZatcaHttpClient {
    * This is required for the /compliance endpoint.
    */
   async requestCSID(csr: string, otp?: string): Promise<ZatcaCSIDResponse> {
-    // ZATCA expects the CSR to be base64-encoded (base64-of-PEM)
-    const response = await this.request('POST', '/compliance', { csr: btoa(csr) }, undefined, undefined, otp);
+    if (!csr) {
+      return {
+        binarySecurityToken: '',
+        secret: '',
+        requestId: undefined,
+        status: 'REJECTED',
+        error: {
+          code: 'MISSING_CSR',
+          category: 'VALIDATION',
+          message: 'CSR is required to request a Compliance CSID',
+        },
+      };
+    }
+
+    let csrBase64: string;
+    try {
+      csrBase64 = btoa(csr);
+    } catch {
+      return {
+        binarySecurityToken: '',
+        secret: '',
+        requestId: undefined,
+        status: 'REJECTED',
+        error: {
+          code: 'CSR_ENCODING_ERROR',
+          category: 'VALIDATION',
+          message: 'Failed to Base64-encode the CSR. Ensure it is a valid PEM string.',
+        },
+      };
+    }
+
+    const response = await this.request('POST', '/compliance', { csr: csrBase64 }, undefined, undefined, otp);
 
     let data: any;
     try {

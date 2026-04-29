@@ -42,7 +42,16 @@ export class StatusApi extends ZatcaHttpClient {
       throw new ZatcaError(`Invoice not found: ${uuid}`, ZatcaErrorCode.API_ERROR);
     }
 
-    const data = JSON.parse(response.body);
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(response.body);
+    } catch {
+      throw new ZatcaError(
+        `Failed to parse invoice status response (HTTP ${response.status}): ${response.body.substring(0, 200)}`,
+        ZatcaErrorCode.API_ERROR,
+        { httpStatus: response.status, body: response.body },
+      );
+    }
 
     return this.parseStatusResult(data);
   }
@@ -63,7 +72,16 @@ export class StatusApi extends ZatcaHttpClient {
       credentials,
     );
 
-    const data = JSON.parse(response.body);
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(response.body);
+    } catch {
+      throw new ZatcaError(
+        `Failed to parse status response for request ${requestId} (HTTP ${response.status}): ${response.body.substring(0, 200)}`,
+        ZatcaErrorCode.API_ERROR,
+        { httpStatus: response.status, body: response.body },
+      );
+    }
 
     return this.parseStatusResult(data);
   }
