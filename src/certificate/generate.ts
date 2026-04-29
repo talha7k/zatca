@@ -135,6 +135,34 @@ function derExplicitTag(tagNumber: number, content: Buffer): Buffer {
   return derTLV(tag, content);
 }
 
+/** Read DER length field, returning { value: number, bytesUsed: number }. */
+function derReadLength(buf: Buffer, offset: number): { value: number; bytesUsed: number } {
+  const first = buf[offset];
+  if (first < 0x80) {
+    return { value: first, bytesUsed: 1 };
+  }
+  const numBytes = first & 0x7f;
+  let length = 0;
+  for (let i = 0; i < numBytes; i++) {
+    length = (length << 8) | buf[offset + 1 + i];
+  }
+  return { value: length, bytesUsed: 1 + numBytes };
+}
+
+/** Return the number of bytes occupied by a DER length field at the given offset. */
+function derReadLengthBytes(buf: Buffer, offset: number): number {
+  const first = buf[offset];
+  if (first < 0x80) return 1;
+  return 1 + (first & 0x7f);
+}
+
+/** Skip a complete DER element (tag + length + value) and return total bytes consumed. */
+function skipDerElement(buf: Buffer, offset: number): number {
+  const tagBytes = 1; // simple tags only
+  const lenInfo = derReadLength(buf, offset + tagBytes);
+  return tagBytes + lenInfo.bytesUsed + lenInfo.value;
+}
+
 /** Build an AttributeTypeAndValue: SEQUENCE { OID, value }. */
 function derAttributeTypeAndValue(oidDotted: string, value: Buffer): Buffer {
   return derSequence(derOid(oidDotted), value);
@@ -384,6 +412,86 @@ export function extractPublicKey(certificatePem: string): string {
     throw new ZatcaError(
       `Failed to extract public key from PEM`,
       ZatcaErrorCode.CERT_GEN_ERROR,
+    );
+  }
+}
+
+/**
+ * Extract raw EC public key from a PEM-encoded certificate, public key, or private key.
+ *
+ * Returns the raw EC point as base64 (65 bytes for P-256: 0x04 + x + y).
+ * This is the format required for ZATCA QR code Tag 8.
+ *
+ * Accepts X.509 certificates, SPKI public keys, and PKCS#8/PKCS#1 private keys.
+ */
+export function extractRawPublicKey(pem: string): string {
+  try {
+    const key = crypto.createPublicKey(pem);
+    const spkiDer = key.export({ type: 'spki', format: 'der' });
+    // Raw EC point is the last 65 bytes of SPKI DER for P-256
+    return spkiDer.slice(-65).toString('base64');
+  } catch (error) {
+    throw new ZatcaError(
+      `Failed to extract raw public key: ${(error as Error).message}`,
+      ZatcaErrorCode.CERT_GEN_ERROR,
+      error,
+    );
+  }
+}
+
+/**
+ * Extract the signature bytes from an X.509 certificate in PEM format.
+ *
+ * Returns the certificate's signature as base64.
+ * This is the format required for ZATCA QR code Tag 9.
+ *
+ * Parses the ASN.1 DER structure: SEQUENCE { tbsCertificate, signatureAlgorithm, signatureValue }
+ * and extracts the raw bytes from the signatureValue BIT STRING.
+ */
+export function extractCertificateSignature(certificatePem: string): string {
+  try {
+    // Decode PEM to DER
+    const der = Buffer.from(
+      certificatePem
+        .replace(/-----BEGIN CERTIFICATE-----/g, '')
+        .replace(/-----END CERTIFICATE-----/g, '')
+        .replace(/\s/g, ''),
+      'base64',
+    );
+
+    // Parse outer SEQUENCE tag
+    let offset = 0;
+    if (der[offset++] !== 0x30) {
+      throw new Error('Invalid certificate DER: expected outer SEQUENCE');
+    }
+    offset += derReadLengthBytes(der, offset);
+
+    // Skip tbsCertificate (SEQUENCE)
+    offset += skipDerElement(der, offset);
+
+    // Skip signatureAlgorithm (SEQUENCE)
+    offset += skipDerElement(der, offset);
+
+    // Read signatureValue (BIT STRING)
+    if (der[offset] !== 0x03) {
+      throw new Error('Invalid certificate DER: expected BIT STRING for signatureValue');
+    }
+    offset++; // skip BIT STRING tag
+    const sigLenInfo = derReadLength(der, offset);
+    offset += sigLenInfo.bytesUsed;
+
+    // First byte of BIT STRING content is unused bits count (always 0 for signatures)
+    offset++; // skip unused bits byte
+
+    // Remaining bytes are the actual signature
+    const signatureBytes = der.slice(offset, offset + sigLenInfo.value - 1);
+    return signatureBytes.toString('base64');
+  } catch (error) {
+    if (error instanceof ZatcaError) throw error;
+    throw new ZatcaError(
+      `Failed to extract certificate signature: ${(error as Error).message}`,
+      ZatcaErrorCode.CERT_LOAD_ERROR,
+      error,
     );
   }
 }

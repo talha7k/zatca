@@ -84,19 +84,22 @@ const xml = generateInvoiceXml({
 ### 2. Sign Invoice
 
 ```typescript
-import { signInvoice } from '@talha7k/zatca';
+import { signInvoice, extractCertificateSignature } from '@talha7k/zatca';
+
+const certificatePem = '-----BEGIN CERTIFICATE-----\n...';
 
 const { signedXml, invoiceHash, signatureValue } = signInvoice({
   xml,
-  privateKeyPem: '-----BEGIN EC PRIVATE KEY-----\n...',
-  certificatePem: '-----BEGIN CERTIFICATE-----\n...',
+  privateKeyPem: '-----BEGIN PRIVATE KEY-----\n...',
+  certificatePem,
   qrData: {
     sellerName: 'Test Company',
     vatNumber: '300000000000003',
     timestamp: '2025-04-26T14:30:00Z',
     totalWithVat: '115.00',
     vatTotal: '15.00',
-    certificateSignature: '...', // hex string from ZATCA certificate
+    certificateSignature: extractCertificateSignature(certificatePem), // QR Tag 9
+    // Tags 6, 7, 8 are computed automatically by signInvoice()
   },
 });
 ```
@@ -242,7 +245,9 @@ All public functions wrap errors in `ZatcaError` with structured codes — no ra
 ### Certificate
 - `generateCSR(params: CSRParams)` — Generate CSR with ZATCA extensions
 - `generateECDSAKeyPair()` — Generate ECDSA P-256 key pair
-- `extractPublicKey(certificatePem)` — Extract raw public key from certificate
+- `extractPublicKey(certificatePem)` — Extract public key as PEM (for general use)
+- `extractRawPublicKey(pem)` — Extract raw EC public key (65-byte point) as base64 (**for QR Tag 8**)
+- `extractCertificateSignature(certificatePem)` — Extract certificate signature as base64 (**for QR Tag 9**)
 - `encryptPrivateKey(pem, masterKey)` / `decryptPrivateKey(data, masterKey)` — AES-256-GCM
 
 ### Hash Chain
