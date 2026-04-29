@@ -248,6 +248,9 @@ All public functions wrap errors in `ZatcaError` with structured codes — no ra
 - `extractPublicKey(certificatePem)` — Extract public key as PEM (for general use)
 - `extractRawPublicKey(pem)` — Extract raw EC public key (65-byte point) as base64 (**for QR Tag 8**)
 - `extractCertificateSignature(certificatePem)` — Extract certificate signature as base64 (**for QR Tag 9**)
+- `parseCertificate(certificatePem)` — Parse X.509 cert → `CertificateInfo` (subject, issuer, expiry, fingerprint)
+- `isCertificateExpired(certificatePem)` — Check if CSID certificate has expired
+- `isCertificateExpiringSoon(certificatePem, days?)` — Check if cert expires within N days (default: 30)
 - `encryptPrivateKey(pem, masterKey)` / `decryptPrivateKey(data, masterKey)` — AES-256-GCM
 
 ### Hash Chain

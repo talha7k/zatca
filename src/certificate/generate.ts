@@ -497,6 +497,105 @@ export function extractCertificateSignature(certificatePem: string): string {
 }
 
 /**
+ * Certificate information extracted from an X.509 PEM certificate.
+ */
+export interface CertificateInfo {
+  /** Subject DN (e.g., "CN=TST-TestCompany-300000000000003") */
+  subject: string;
+  /** Issuer DN (e.g., "CN=ZATCA-Code-Signing-CA") */
+  issuer: string;
+  /** Serial number (hex string) */
+  serialNumber: string;
+  /** Not-before date as ISO 8601 string */
+  validFrom: string;
+  /** Not-after (expiry) date as ISO 8601 string */
+  validTo: string;
+  /** SHA-256 fingerprint */
+  fingerprint256: string;
+  /** Whether the certificate is currently valid (not expired, not not-yet-valid) */
+  isValid: boolean;
+  /** Whether the certificate is expired */
+  isExpired: boolean;
+  /** Days until expiry (negative if expired) */
+  daysUntilExpiry: number;
+}
+
+/**
+ * Parse an X.509 PEM certificate and extract key information.
+ *
+ * Useful for checking CSID certificate validity, expiry, and metadata.
+ * Works with both compliance (test) and production CSID certificates.
+ *
+ * @param certificatePem - PEM-encoded X.509 certificate
+ * @returns Certificate information including validity status and days until expiry
+ */
+export function parseCertificate(certificatePem: string): CertificateInfo {
+  try {
+    const cert = new crypto.X509Certificate(certificatePem);
+
+    const now = new Date();
+    const validToDate = cert.validToDate;
+    const validFromDate = cert.validFromDate;
+
+    const isExpired = now > validToDate;
+    const isNotYetValid = now < validFromDate;
+    const isValid = !isExpired && !isNotYetValid;
+
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const daysUntilExpiry = Math.ceil((validToDate.getTime() - now.getTime()) / msPerDay);
+
+    return {
+      subject: cert.subject,
+      issuer: cert.issuer,
+      serialNumber: cert.serialNumber,
+      validFrom: cert.validFrom,
+      validTo: cert.validTo,
+      fingerprint256: cert.fingerprint256,
+      isValid,
+      isExpired,
+      daysUntilExpiry,
+    };
+  } catch (error) {
+    throw new ZatcaError(
+      `Failed to parse certificate: ${(error as Error).message}`,
+      ZatcaErrorCode.CERT_LOAD_ERROR,
+      error,
+    );
+  }
+}
+
+/**
+ * Check if an X.509 certificate is expired.
+ *
+ * @param certificatePem - PEM-encoded certificate
+ * @returns `true` if the certificate's validTo date is in the past
+ */
+export function isCertificateExpired(certificatePem: string): boolean {
+  return parseCertificate(certificatePem).isExpired;
+}
+
+/**
+ * Check if an X.509 certificate will expire within the given number of days.
+ *
+ * Useful for proactive renewal alerts in enterprise systems.
+ *
+ * @param certificatePem - PEM-encoded certificate
+ * @param days - Number of days to look ahead (default: 30)
+ * @returns `true` if the certificate expires within the given days
+ *
+ * @example
+ * ```typescript
+ * if (isCertificateExpiringSoon(csidCert, 14)) {
+ *   // Send renewal alert
+ * }
+ * ```
+ */
+export function isCertificateExpiringSoon(certificatePem: string, days: number = 30): boolean {
+  const info = parseCertificate(certificatePem);
+  return !info.isExpired && info.daysUntilExpiry <= days;
+}
+
+/**
  * Encrypt a private key using AES-256-GCM for secure storage.
  *
  * Output format: `ivHex:authTagHex:encryptedDataHex`

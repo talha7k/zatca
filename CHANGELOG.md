@@ -7,10 +7,14 @@ All notable changes to this project will be documented in this file.
 ### Added
 - **`extractRawPublicKey(pem)`** — Extracts raw EC public key (65-byte EC point: 0x04 + x + y) as base64 from a certificate, public key, or private key PEM. Use this for **ZATCA QR Tag 8**. The existing `extractPublicKey()` returns PEM format which is not suitable for QR codes.
 - **`extractCertificateSignature(certificatePem)`** — Extracts the X.509 certificate's signature bytes as base64 by parsing the ASN.1 DER structure. Use this for **ZATCA QR Tag 9**.
-- Internal DER parsing utilities (`derReadLength`, `derReadLengthBytes`, `skipDerElement`) for ASN.1 certificate parsing
+- **`parseCertificate(certificatePem)`** — Parses X.509 PEM certificate and returns `CertificateInfo` with subject, issuer, serial number, validity dates, fingerprint, expiry status, and days until expiry.
+- **`isCertificateExpired(certificatePem)`** — Quick check if a CSID certificate has expired.
+- **`isCertificateExpiringSoon(certificatePem, days?)`** — Proactive renewal alert check (default: 30 days lookahead).
+- **`CertificateInfo`** type — Structured certificate information interface.
+- Internal DER parsing utilities for ASN.1 certificate structure.
 
 ### Fixed
-- Consumers previously had no way to correctly extract QR Tag 8 and Tag 9 values, leading to bugs where full PEM certificates were passed as public key and certificate signature
+- Consumers previously had no way to correctly extract QR Tag 8 and Tag 9 values, leading to bugs where full PEM certificates were passed as public key and certificate signature.
 
 ## [0.4.0] - 2026-04-29
 
