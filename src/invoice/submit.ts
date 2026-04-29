@@ -22,7 +22,7 @@ import { ZatcaError, ZatcaErrorCode } from '../errors.js';
 import { validateInvoice } from '../utils/validation.js';
 import { generateInvoiceXml } from '../xml/index.js';
 import { signInvoice } from '../signing/index.js';
-import { generatePhase2TLV } from '../qrcode/index.js';
+import { generatePhase2TLV } from '@talha7k/zatca-qr';
 import { ZatcaApiClient } from '../api/index.js';
 import { extractPublicKey } from '../certificate/index.js';
 

@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-04-29
+
+### Changed
+- **QR module refactored to use `@talha7k/zatca-qr` as dependency** — TLV encoding (`encodeTLV`, `hexToBase64`, `generatePhase1TLV`, `generatePhase2TLV`) now comes from `@talha7k/zatca-qr` instead of duplicated code. Single source of truth.
+- Added `@talha7k/zatca-qr@^1.2.0` as a runtime dependency
+- `src/qrcode/tlv.ts` removed (144 lines of duplicated code)
+- `src/signing/sign.ts` and `src/invoice/submit.ts` import `generatePhase2TLV` directly from `@talha7k/zatca-qr`
+- Phase 1 QR image default width changed from 150px to 200px (matches zatca-qr)
+
+### Added
+- `base64ToHex` utility now re-exported from `@talha7k/zatca-qr` (was missing)
+- `QRImageOptions` type re-exported from `@talha7k/zatca-qr`
+- QR image functions now have `ZatcaError` wrapping with `QR_GEN_ERROR` code
+
+### Preserved (no functionality lost)
+- `generateQRCodeData()` — ZatcaError-wrapped Phase 2 QR with `Phase2QRData` type mapping (`ecdsaSignature` → `signatureValue`, `ecdsaPublicKey` → `publicKey`)
+- `generatePhase1QRCodeData()` — ZatcaError-wrapped Phase 1 QR
+- All existing exports from `src/qrcode/index.ts` remain backward compatible
+
 ## [0.3.1] - 2026-04-29
 
 ### Fixed (enterprise error handling audit)

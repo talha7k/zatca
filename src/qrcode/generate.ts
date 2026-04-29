@@ -2,20 +2,19 @@
  * QR Code Data Generation for ZATCA invoices.
  *
  * Generates the Base64-encoded TLV string that should be rendered as a QR code
- * on the invoice. The actual QR image rendering is left to the consuming
- * application (it's a UI concern — use any QR library like `qrcode`, `qr-code-styling`, etc.).
- *
- * This module provides the typed, error-wrapped API over the raw TLV functions.
+ * on the invoice. Uses @talha7k/zatca-qr for TLV encoding, wrapped with
+ * ZatcaError for consistent error handling across the library.
  */
 
 import { ZatcaError, ZatcaErrorCode } from '../errors.js';
-import { generatePhase1TLV, generatePhase2TLV } from './tlv.js';
+import { generatePhase1TLV, generatePhase2TLV } from '@talha7k/zatca-qr';
 import type { Phase1QRData, Phase2QRData } from '../types.js';
 
 /**
  * Generate QR code data (Base64 TLV string) for a Phase 2 invoice.
  *
- * Maps the `Phase2QRData` type to the TLV tag structure.
+ * Maps the `Phase2QRData` type (with `ecdsaSignature`/`ecdsaPublicKey`)
+ * to the `@talha7k/zatca-qr` field names (`signatureValue`/`publicKey`).
  */
 export function generateQRCodeData(data: Phase2QRData): string {
   try {

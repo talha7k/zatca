@@ -20,7 +20,7 @@ import crypto from 'crypto';
 import { SignedXml } from 'xml-crypto';
 import { DOMParser } from '@xmldom/xmldom';
 import { ZatcaError, ZatcaErrorCode } from '../errors.js';
-import { generatePhase2TLV } from '../qrcode/tlv.js';
+import { generatePhase2TLV } from '@talha7k/zatca-qr';
 
 import { XmlCanonicalizer } from 'xmldsigjs';
 
