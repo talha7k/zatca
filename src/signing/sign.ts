@@ -134,6 +134,14 @@ function base64ToBytes(fieldName: string, value: string): Buffer {
   return Buffer.from(assertBase64(fieldName, value), 'base64');
 }
 
+function decodeInvoiceHash(value: string): Buffer {
+  const trimmed = value.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
+    return Buffer.from(trimmed, 'hex');
+  }
+  return base64ToBytes('invoiceHash', trimmed);
+}
+
 function generatePhase2TLVForQr(data: {
   sellerName: string;
   vatNumber: string;
@@ -151,25 +159,36 @@ function generatePhase2TLVForQr(data: {
     encodeTLVText(3, data.timestamp.trim()),
     encodeTLVText(4, data.totalWithVat.trim()),
     encodeTLVText(5, (data.vatTotal ?? '0.00').trim()),
-    encodeTLVText(6, assertBase64('invoiceHash', data.invoiceHash)),
-    encodeTLVText(7, assertBase64('signatureValue', data.signatureValue)),
+    encodeTLVBytes(6, decodeInvoiceHash(data.invoiceHash)),
+    encodeTLVBytes(7, base64ToBytes('signatureValue', data.signatureValue)),
     encodeTLVBytes(8, base64ToBytes('publicKey', data.publicKey)),
     encodeTLVBytes(9, base64ToBytes('certificateSignature', data.certificateSignature)),
   ].join('');
   return Buffer.from(hex, 'hex').toString('base64');
 }
 
+function extractRawPublicKeyFromKey(key: crypto.KeyObject): string {
+  const spkiDer = key.export({ type: 'spki', format: 'der' });
+  return Buffer.from(spkiDer).slice(-65).toString('base64');
+}
+
+function extractPrivateKeyRawPublicKey(privateKeyPem: string): string {
+  return extractRawPublicKeyFromKey(crypto.createPublicKey(privateKeyPem));
+}
+
+function extractCertificateRawPublicKey(certificatePem: string): string {
+  return extractRawPublicKeyFromKey(new crypto.X509Certificate(certificatePem).publicKey);
+}
+
 function extractQrPublicKey(certificatePem: string, privateKeyPem: string): string {
-  try {
-    const cert = new crypto.X509Certificate(certificatePem);
-    const spkiDer = cert.publicKey.export({ type: 'spki', format: 'der' });
-    return spkiDer.toString('base64');
-  } catch {
-    const spkiDer = crypto
-      .createPublicKey(privateKeyPem)
-      .export({ type: 'spki', format: 'der' });
-    return spkiDer.toString('base64');
+  const certificatePublicKey = extractCertificateRawPublicKey(certificatePem);
+  const privateKeyPublicKey = extractPrivateKeyRawPublicKey(privateKeyPem);
+
+  if (certificatePublicKey !== privateKeyPublicKey) {
+    throw new Error('Private key does not match the supplied CSID certificate');
   }
+
+  return certificatePublicKey;
 }
 
 function getUblRoot(xml: string): { name: 'Invoice' | 'CreditNote'; namespace: string } {
@@ -206,6 +225,10 @@ export function signInvoice(params: SignParams): SignResult {
   try {
     const { xml, privateKeyPem, certificatePem, qrData } = params;
     const ublRoot = getUblRoot(xml);
+
+    if (!/<ext:UBLExtensions\b[\s\S]*?<\/ext:UBLExtensions>/.test(xml)) {
+      throw new Error('Invoice XML must contain ext:UBLExtensions placeholder');
+    }
 
     // 1. Canonical hash is recomputed from the exact XML returned below,
     // after signature insertion and before QR insertion. QR is stripped during
@@ -318,7 +341,7 @@ export function signInvoice(params: SignParams): SignResult {
         if (signaturePoint !== -1) {
           return withoutExistingQr.slice(0, signaturePoint) + element + withoutExistingQr.slice(signaturePoint);
         }
-        throw new Error('Could not insert QR: missing AdditionalDocumentReference or Signature anchor');
+        throw new Error('Unable to embed ZATCA QR: missing AdditionalDocumentReference or Signature anchor');
       };
 
       signedXml = insertQr(signedXml, buildQrBase64(invoiceHash));
@@ -371,7 +394,7 @@ export function computeInvoiceHashBase64(xml: string): string {
  * 1. Remove UBLExtensions elements
  * 2. Remove cac:Signature elements
  * 3. Remove QR AdditionalDocumentReference (optional)
- * 4. Apply inclusive C14N canonicalization (matching ZATCA invoice hash transform)
+ * 4. Apply exclusive C14N canonicalization (matching ZATCA invoice hash transform)
  * 5. SHA-256 hash + Base64 encode
  */
 export function canonicalizeForHash(xml: string, stripQR = true): { canonical: string; hash: string; hashBase64: string } {
@@ -412,10 +435,8 @@ export function canonicalizeForHash(xml: string, stripQR = true): { canonical: s
     }
   }
 
-  // ZATCA invoice hash transform uses canonical XML after removing excluded nodes.
-  // XML-DSig SignedInfo still uses exclusive C14N; this hash path intentionally
-  // uses inclusive C14N for the API body invoiceHash and QR Tag 6.
-  const canonicalizer = new XmlCanonicalizer(false, false);
+  // ZATCA invoice hash transform uses exclusive canonical XML after removing excluded nodes.
+  const canonicalizer = new XmlCanonicalizer(false, true);
   const canonical = canonicalizer.Canonicalize(doc as unknown as Node) as string;
 
   const hashBytes = crypto.createHash('sha256').update(canonical, 'utf8').digest();
@@ -487,7 +508,7 @@ function buildUBLSignatureBlock(signatureXml: string): string {
                                    xmlns:sbc="urn:oasis:names:specification:ubl:schema:xsd:SignatureBasicComponents-2"
                                    xmlns:ds="${DS_NS}">
           <sac:SignatureInformation>
-            <cbc:ID xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">urn:oasis:names:specification:ubl:signature:1</cbc:ID>
+            <cbc:ID xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">urn:oasis:names:specification:ubl:signature:Invoice</cbc:ID>
             <sbc:ReferencedSignatureID>urn:oasis:names:specification:ubl:signature:Invoice</sbc:ReferencedSignatureID>
             ${signatureXml}
           </sac:SignatureInformation>

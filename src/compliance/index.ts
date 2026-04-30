@@ -108,7 +108,9 @@ export function extractInvoiceUuid(xml: string): string | null {
 export function extractInvoiceTimestamp(xml: string): string {
   const issueDate = extractXmlValue(xml, 'IssueDate');
   const issueTime = extractXmlValue(xml, 'IssueTime');
-  return `${issueDate ?? new Date().toISOString().slice(0, 10)}T${issueTime ?? new Date().toISOString().slice(11, 19)}`;
+  const fallback = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  if (!issueDate || !issueTime) return fallback;
+  return `${issueDate}T${issueTime.replace(/Z$/, '')}Z`;
 }
 
 function extractCertificateSignatureOrEmpty(certificatePem: string): string {
