@@ -77,7 +77,12 @@ export class ComplianceApi extends ZatcaHttpClient {
     return {
       binarySecurityToken: data.binarySecurityToken || '',
       secret: data.secret || '',
-      requestId: data.requestID || data.requestId,
+      requestId:
+        data.requestID != null
+          ? String(data.requestID)
+          : data.requestId != null
+            ? String(data.requestId)
+            : undefined,
       status: response.status >= 200 && response.status < 300 ? 'ACCEPTED' : 'REJECTED',
       error: data.errors?.[0]
         ? {

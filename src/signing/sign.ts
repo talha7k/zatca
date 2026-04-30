@@ -120,25 +120,21 @@ function encodeTLVText(tag: number, value: string): string {
   return encodeTLVBytes(tag, Buffer.from(value, 'utf8'));
 }
 
-function base64ToBytes(fieldName: string, value: string): Buffer {
+function assertBase64(fieldName: string, value: string): string {
   const trimmed = value.trim();
-  if (trimmed.length === 0) return Buffer.alloc(0);
+  if (trimmed.length === 0) return trimmed;
   const bytes = Buffer.from(trimmed, 'base64');
   if (bytes.toString('base64').replace(/=+$/, '') !== trimmed.replace(/=+$/, '')) {
     throw new Error(`${fieldName} must be valid base64`);
   }
-  return bytes;
+  return trimmed;
 }
 
-function invoiceHashToBytes(invoiceHash: string): Buffer {
-  const trimmed = invoiceHash.trim();
-  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
-    return Buffer.from(trimmed, 'hex');
-  }
-  return base64ToBytes('invoiceHash', trimmed);
+function base64ToBytes(fieldName: string, value: string): Buffer {
+  return Buffer.from(assertBase64(fieldName, value), 'base64');
 }
 
-function generatePhase2TLVBinary(data: {
+function generatePhase2TLVForQr(data: {
   sellerName: string;
   vatNumber: string;
   timestamp: string;
@@ -155,8 +151,8 @@ function generatePhase2TLVBinary(data: {
     encodeTLVText(3, data.timestamp.trim()),
     encodeTLVText(4, data.totalWithVat.trim()),
     encodeTLVText(5, (data.vatTotal ?? '0.00').trim()),
-    encodeTLVBytes(6, invoiceHashToBytes(data.invoiceHash)),
-    encodeTLVBytes(7, base64ToBytes('signatureValue', data.signatureValue)),
+    encodeTLVText(6, assertBase64('invoiceHash', data.invoiceHash)),
+    encodeTLVText(7, assertBase64('signatureValue', data.signatureValue)),
     encodeTLVBytes(8, base64ToBytes('publicKey', data.publicKey)),
     encodeTLVBytes(9, base64ToBytes('certificateSignature', data.certificateSignature)),
   ].join('');
@@ -167,12 +163,12 @@ function extractQrPublicKey(certificatePem: string, privateKeyPem: string): stri
   try {
     const cert = new crypto.X509Certificate(certificatePem);
     const spkiDer = cert.publicKey.export({ type: 'spki', format: 'der' });
-    return spkiDer.slice(-65).toString('base64');
+    return spkiDer.toString('base64');
   } catch {
     const spkiDer = crypto
       .createPublicKey(privateKeyPem)
       .export({ type: 'spki', format: 'der' });
-    return spkiDer.slice(-65).toString('base64');
+    return spkiDer.toString('base64');
   }
 }
 
@@ -282,7 +278,7 @@ export function signInvoice(params: SignParams): SignResult {
 
     const buildQrBase64 = (hashBase64: string): string => {
       if (!qrData) return '';
-      return generatePhase2TLVBinary({
+      return generatePhase2TLVForQr({
         sellerName: qrData.sellerName,
         vatNumber: qrData.vatNumber,
         timestamp: qrData.timestamp,
@@ -375,7 +371,7 @@ export function computeInvoiceHashBase64(xml: string): string {
  * 1. Remove UBLExtensions elements
  * 2. Remove cac:Signature elements
  * 3. Remove QR AdditionalDocumentReference (optional)
- * 4. Apply Exclusive C14N canonicalization (exc-c14n, preserving whitespace)
+ * 4. Apply inclusive C14N canonicalization (matching ZATCA invoice hash transform)
  * 5. SHA-256 hash + Base64 encode
  */
 export function canonicalizeForHash(xml: string, stripQR = true): { canonical: string; hash: string; hashBase64: string } {
@@ -416,8 +412,10 @@ export function canonicalizeForHash(xml: string, stripQR = true): { canonical: s
     }
   }
 
-  // Exclusive C14N (exc-c14n) canonicalization — ZATCA requires exc-c14n for hash computation
-  const canonicalizer = new XmlCanonicalizer(false, true);
+  // ZATCA invoice hash transform uses canonical XML after removing excluded nodes.
+  // XML-DSig SignedInfo still uses exclusive C14N; this hash path intentionally
+  // uses inclusive C14N for the API body invoiceHash and QR Tag 6.
+  const canonicalizer = new XmlCanonicalizer(false, false);
   const canonical = canonicalizer.Canonicalize(doc as unknown as Node) as string;
 
   const hashBytes = crypto.createHash('sha256').update(canonical, 'utf8').digest();

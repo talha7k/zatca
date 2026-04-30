@@ -426,7 +426,9 @@ export function extractPublicKey(certificatePem: string): string {
  */
 export function extractRawPublicKey(pem: string): string {
   try {
-    const key = crypto.createPublicKey(pem);
+    const key = pem.includes('BEGIN CERTIFICATE')
+      ? new crypto.X509Certificate(pem).publicKey
+      : crypto.createPublicKey(pem);
     const spkiDer = key.export({ type: 'spki', format: 'der' });
     // Raw EC point is the last 65 bytes of SPKI DER for P-256
     return spkiDer.slice(-65).toString('base64');
