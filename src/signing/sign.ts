@@ -178,7 +178,7 @@ function getCertificateInfo(certificatePem: string): {
   const digestHex = crypto.createHash('sha256').update(certificateBase64, 'utf8').digest('hex');
   return {
     digestValue: Buffer.from(digestHex, 'utf8').toString('base64'),
-    issuerName: cert.issuer.replace(/\n/g, ', '),
+    issuerName: cert.issuer.split('\n').reverse().join(', '),
     serialNumber: BigInt(`0x${cert.serialNumber}`).toString(10),
   };
 }
@@ -202,33 +202,24 @@ function buildSignedProperties(certificate: {
   digestValue: string;
   issuerName: string;
   serialNumber: string;
-}): string {
-  return `<xades:SignedProperties xmlns:xades="${XADES_NS}" xmlns:ds="${DS_NS}" Id="xadesSignedProperties"><xades:SignedSignatureProperties><xades:SigningTime>${formatSigningTime()}</xades:SigningTime><xades:SigningCertificate><xades:Cert><xades:CertDigest><ds:DigestMethod Algorithm="${SHA256_DIGEST_URI}"/><ds:DigestValue>${certificate.digestValue}</ds:DigestValue></xades:CertDigest><xades:IssuerSerial><ds:X509IssuerName>${certificate.issuerName}</ds:X509IssuerName><ds:X509SerialNumber>${certificate.serialNumber}</ds:X509SerialNumber></xades:IssuerSerial></xades:Cert></xades:SigningCertificate></xades:SignedSignatureProperties></xades:SignedProperties>`;
+}, signingTime: string): string {
+  return `<xades:SignedProperties xmlns:xades="${XADES_NS}" xmlns:ds="${DS_NS}" Id="xadesSignedProperties"><xades:SignedSignatureProperties><xades:SigningTime>${signingTime}</xades:SigningTime><xades:SigningCertificate><xades:Cert><xades:CertDigest><ds:DigestMethod Algorithm="${SHA256_DIGEST_URI}"/><ds:DigestValue>${certificate.digestValue}</ds:DigestValue></xades:CertDigest><xades:IssuerSerial><ds:X509IssuerName>${certificate.issuerName}</ds:X509IssuerName><ds:X509SerialNumber>${certificate.serialNumber}</ds:X509SerialNumber></xades:IssuerSerial></xades:Cert></xades:SigningCertificate></xades:SignedSignatureProperties></xades:SignedProperties>`;
 }
 
-function buildFinalSignedPropertiesXml(signedPropertiesXml: string): string {
-  const signedPropertiesBody = signedPropertiesXml.replace(
-    /^<xades:SignedProperties[^>]*>/,
-    '<xades:SignedProperties Id="xadesSignedProperties">',
-  );
-  return `<ds:Signature xmlns:ds="${DS_NS}"><ds:Object><xades:QualifyingProperties xmlns:xades="${XADES_NS}" Target="signature">${signedPropertiesBody}</xades:QualifyingProperties></ds:Object></ds:Signature>`;
+function buildSdkSignedPropertiesDigestXml(certificate: {
+  digestValue: string;
+  issuerName: string;
+  serialNumber: string;
+}, signingTime: string): string {
+  return `<xades:SignedProperties xmlns:xades="${XADES_NS}" Id="xadesSignedProperties"><xades:SignedSignatureProperties><xades:SigningTime>${signingTime}</xades:SigningTime><xades:SigningCertificate><xades:Cert><xades:CertDigest><ds:DigestMethod xmlns:ds="${DS_NS}" Algorithm="${SHA256_DIGEST_URI}"/><ds:DigestValue xmlns:ds="${DS_NS}">${certificate.digestValue}</ds:DigestValue></xades:CertDigest><xades:IssuerSerial><ds:X509IssuerName xmlns:ds="${DS_NS}">${certificate.issuerName}</ds:X509IssuerName><ds:X509SerialNumber xmlns:ds="${DS_NS}">${certificate.serialNumber}</ds:X509SerialNumber></xades:IssuerSerial></xades:Cert></xades:SigningCertificate></xades:SignedSignatureProperties></xades:SignedProperties>`;
 }
 
-function digestFinalSignedProperties(signedPropertiesXml: string): string {
-  const doc = new DOMParser().parseFromString(buildFinalSignedPropertiesXml(signedPropertiesXml), 'text/xml');
-  const findSignedProperties = (node: Node): Node | null => {
-    if (node.nodeType === 1 && (node as Element).localName === 'SignedProperties') return node;
-    for (let child = node.firstChild; child; child = child.nextSibling) {
-      const match = findSignedProperties(child);
-      if (match) return match;
-    }
-    return null;
-  };
-  const signedPropertiesNode = findSignedProperties(doc as unknown as Node);
-  if (!signedPropertiesNode) {
-    throw new Error('Unable to canonicalize xades:SignedProperties');
-  }
-  return hashForDigestValue(new XmlCanonicalizer(false, false).Canonicalize(signedPropertiesNode) as string);
+function digestSdkSignedProperties(certificate: {
+  digestValue: string;
+  issuerName: string;
+  serialNumber: string;
+}, signingTime: string): string {
+  return hashForDigestValue(buildSdkSignedPropertiesDigestXml(certificate, signingTime));
 }
 
 function buildSignedInfo(invoiceHash: string, signedPropertiesDigest: string): string {
@@ -311,8 +302,9 @@ export function signInvoice(params: SignParams): SignResult {
     };
 
     const buildSignedXml = (invoiceHash: string): SignResult => {
-      const signedPropertiesXml = buildSignedProperties(certificateInfo);
-      const signedPropertiesDigest = digestFinalSignedProperties(signedPropertiesXml);
+      const signingTime = formatSigningTime();
+      const signedPropertiesXml = buildSignedProperties(certificateInfo, signingTime);
+      const signedPropertiesDigest = digestSdkSignedProperties(certificateInfo, signingTime);
       const signedInfoXml = buildSignedInfo(invoiceHash, signedPropertiesDigest);
       const canonicalSignedInfo = canonicalizeXml(signedInfoXml);
       const signatureValue = signSignedInfo(canonicalSignedInfo, privateKeyPem);
