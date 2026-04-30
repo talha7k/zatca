@@ -95,14 +95,6 @@ function base64ToBytes(fieldName: string, value: string): Buffer {
   return Buffer.from(assertBase64(fieldName, value), 'base64');
 }
 
-function decodeInvoiceHash(value: string): Buffer {
-  const trimmed = value.trim();
-  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
-    return Buffer.from(trimmed, 'hex');
-  }
-  return base64ToBytes('invoiceHash', trimmed);
-}
-
 function generatePhase2TLVForQr(data: {
   sellerName: string;
   vatNumber: string;
@@ -120,8 +112,8 @@ function generatePhase2TLVForQr(data: {
     encodeTLVText(3, data.timestamp.trim()),
     encodeTLVText(4, data.totalWithVat.trim()),
     encodeTLVText(5, (data.vatTotal ?? '0.00').trim()),
-    encodeTLVBytes(6, decodeInvoiceHash(data.invoiceHash)),
-    encodeTLVBytes(7, base64ToBytes('signatureValue', data.signatureValue)),
+    encodeTLVText(6, assertBase64('invoiceHash', data.invoiceHash)),
+    encodeTLVText(7, assertBase64('signatureValue', data.signatureValue)),
     encodeTLVBytes(8, base64ToBytes('publicKey', data.publicKey)),
     encodeTLVBytes(9, base64ToBytes('certificateSignature', data.certificateSignature)),
   ].join('');
