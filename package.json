@@ -4,6 +4,7 @@
   "description": "ZATCA Phase 2 e-invoicing integration for Saudi Arabia — TypeScript, framework-agnostic, production-grade",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
