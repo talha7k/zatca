@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.0] - 2026-04-30
+
+### Added
+- **`./qrcode` subpath export** — Browser-safe entry point that only includes QR code functionality (TLV encoding, image generation, Phase 1 & Phase 2 types). Zero Node.js dependencies — safe for Next.js, Vite, and other bundlers without `serverExternalPackages` config.
+- `Phase1QRData` and `Phase2QRData` types re-exported from `@talha7k/zatca/qrcode` for convenience.
+
+### Why
+- The main barrel (`@talha7k/zatca`) re-exports `signing/` which depends on `xml-crypto` (Node.js `fs` module). This caused Next.js build failures when importing QR functions in browser code. The `./qrcode` subpath isolates QR-only code from Node-only dependencies.
+
 ## [0.7.0] - 2026-04-30
 
 ### Added
