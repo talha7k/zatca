@@ -125,7 +125,7 @@ export async function submitInvoice(options: SubmitOptions): Promise<SubmitResul
     const qrCodeBase64 = generatePhase2TLV({
       sellerName: invoice.supplier.nameEn,
       vatNumber: invoice.supplier.vatNumber,
-      timestamp: `${invoice.issueDate}T${invoice.issueTime}Z`,
+      timestamp: `${invoice.issueDate}T${invoice.issueTime.replace(/Z$/, '')}`,
       totalWithVat: invoice.payableAmount.toFixed(2),
       vatTotal: invoice.taxAmount.toFixed(2),
       invoiceHash,
