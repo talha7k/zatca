@@ -20,7 +20,6 @@ import crypto from 'crypto';
 import { SignedXml } from 'xml-crypto';
 import { DOMParser } from '@xmldom/xmldom';
 import { ZatcaError, ZatcaErrorCode } from '../errors.js';
-import { generatePhase2TLV } from '@talha7k/zatca-qr';
 
 import { XmlCanonicalizer } from 'xmldsigjs';
 
@@ -104,6 +103,62 @@ const SHA256_DIGEST_URI = 'http://www.w3.org/2001/04/xmlenc#sha256';
 const DS_NS = 'http://www.w3.org/2000/09/xmldsig#';
 
 // ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+function tlvLengthHex(length: number): string {
+  if (length < 128) return length.toString(16).padStart(2, '0').toUpperCase();
+  if (length < 256) return `81${length.toString(16).padStart(2, '0').toUpperCase()}`;
+  return `82${length.toString(16).padStart(4, '0').toUpperCase()}`;
+}
+
+function encodeTLVBytes(tag: number, valueBytes: Buffer): string {
+  return tag.toString(16).padStart(2, '0').toUpperCase() + tlvLengthHex(valueBytes.length) + valueBytes.toString('hex').toUpperCase();
+}
+
+function encodeTLVText(tag: number, value: string): string {
+  return encodeTLVBytes(tag, Buffer.from(value, 'utf8'));
+}
+
+function generatePhase2TLVBinary(data: {
+  sellerName: string;
+  vatNumber: string;
+  timestamp: string;
+  totalWithVat: string;
+  vatTotal: string;
+  invoiceHash: string;
+  signatureValue: string;
+  publicKey: string;
+  certificateSignature: string;
+}): string {
+  const hex = [
+    encodeTLVText(1, data.sellerName.trim()),
+    encodeTLVText(2, data.vatNumber.trim()),
+    encodeTLVText(3, data.timestamp.trim()),
+    encodeTLVText(4, data.totalWithVat.trim()),
+    encodeTLVText(5, (data.vatTotal ?? '0.00').trim()),
+    encodeTLVBytes(6, Buffer.from(data.invoiceHash.trim(), 'base64')),
+    encodeTLVBytes(7, Buffer.from(data.signatureValue.trim(), 'base64')),
+    encodeTLVBytes(8, Buffer.from(data.publicKey.trim(), 'base64')),
+    encodeTLVBytes(9, Buffer.from(data.certificateSignature.trim(), 'base64')),
+  ].join('');
+  return Buffer.from(hex, 'hex').toString('base64');
+}
+
+function extractQrPublicKey(certificatePem: string, privateKeyPem: string): string {
+  try {
+    const cert = new crypto.X509Certificate(certificatePem);
+    const spkiDer = cert.publicKey.export({ type: 'spki', format: 'der' });
+    return spkiDer.slice(-65).toString('base64');
+  } catch {
+    const spkiDer = crypto
+      .createPublicKey(privateKeyPem)
+      .export({ type: 'spki', format: 'der' });
+    return spkiDer.slice(-65).toString('base64');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -122,111 +177,44 @@ export function signInvoice(params: SignParams): SignResult {
     const { xml, privateKeyPem, certificatePem, qrData } = params;
 
     // 1. Compute invoice hash from original XML (without UBLExtensions, Signature, QR)
-    //    This is used for QR Tag 6 and API body.
     const { canonical, hashBase64: invoiceHash } = canonicalizeForHash(xml);
 
-    // 2. Compute raw ECDSA signature of the canonical invoice for QR Tag 7.
-    //    crypto.sign('sha256', data) does SHA-256(data) then ECDSA_sign.
-    //    This matches invoiceHash = SHA-256(canonical) — same hash, no double-hashing.
-    const ecdsaSignature = crypto
-      .sign('sha256', Buffer.from(canonical, 'utf8'), {
-        key: privateKeyPem,
-        dsaEncoding: 'ieee-p1363',
-      })
-      .toString('base64');
+    // 2. The ECDSA signature for QR Tag 7 is extracted from the XML-DSig
+    //    SignatureValue after computeSignature() below. ZATCA requires
+    //    QR Tag 7 to match ds:SignatureValue exactly.
 
-    // 3. Extract public key for QR Tag 8 (raw EC point: 0x04 + x + y)
-    const spkiDer = crypto
-      .createPublicKey(privateKeyPem)
-      .export({ type: 'spki', format: 'der' });
-    // Raw EC point is the last 65 bytes of SPKI DER for P-256
-    const rawPublicKey = spkiDer.slice(-65).toString('base64');
+    // 3. Extract public key for QR Tag 8
+    const rawPublicKey = extractQrPublicKey(certificatePem, privateKeyPem);
 
-    // 4. If QR data provided, generate QR TLV and embed in XML
-    let xmlWithQR = xml;
-    if (qrData) {
-      const qrBase64 = generatePhase2TLV({
-        sellerName: qrData.sellerName,
-        vatNumber: qrData.vatNumber,
-        timestamp: qrData.timestamp,
-        totalWithVat: qrData.totalWithVat,
-        vatTotal: qrData.vatTotal,
-        invoiceHash, // Tag 6
-        signatureValue: ecdsaSignature, // Tag 7
-        publicKey: rawPublicKey, // Tag 8
-        certificateSignature: qrData.certificateSignature, // Tag 9
-      });
-
-      // Insert QR as AdditionalDocumentReference BEFORE the existing ones
-      const qrElement = `  <cac:AdditionalDocumentReference>
-    <cbc:ID>QR</cbc:ID>
-    <cac:Attachment>
-      <cbc:EmbeddedDocumentBinaryObject mimeCode="text/plain">${qrBase64}</cbc:EmbeddedDocumentBinaryObject>
-    </cac:Attachment>
-  </cac:AdditionalDocumentReference>`;
-
-      // Insert after <cbc:TaxCurrencyCode> and before existing AdditionalDocumentReference or <cac:Signature>
-      const insertionPoint = xml.indexOf('<cac:AdditionalDocumentReference');
-      const signaturePoint = xml.indexOf('<cac:Signature>');
-
-      if (insertionPoint !== -1) {
-        xmlWithQR = xml.slice(0, insertionPoint) + qrElement + '\n' + xml.slice(insertionPoint);
-      } else if (signaturePoint !== -1) {
-        xmlWithQR = xml.slice(0, signaturePoint) + qrElement + '\n' + xml.slice(signaturePoint);
-      }
-    }
-
-    // 5. Extract certificate base64 (strip PEM headers and whitespace)
+    // 4. Extract certificate base64 (strip PEM headers and whitespace)
     const certBase64 = certificatePem
       .replace(/-----BEGIN CERTIFICATE-----/g, '')
       .replace(/-----END CERTIFICATE-----/g, '')
       .replace(/\s/g, '');
 
-    // 6. Create SignedXml instance
+    // 5. Create SignedXml instance
     const sig = new SignedXml();
-
-    // Set the signing key (xml-crypto stores it for calculateSignatureValue)
     sig.signingKey = privateKeyPem;
-
-    // Set key info provider — injects X509Certificate into KeyInfo
     sig.keyInfoProvider = {
       getKey: () => Buffer.from(''),
       getKeyInfo: () =>
         `<ds:X509Data><ds:X509Certificate>${certBase64}</ds:X509Certificate></ds:X509Data>`,
     };
-
-    // Add reference — sign the entire Invoice element
-    // Transforms: enveloped-signature (removes Signature before digesting)
-    //             + exc-c14n (canonicalize for consistent hashing)
     sig.addReference(
       "//*[local-name(.)='Invoice']",
       [ENVELOPED_SIGNATURE_URI, EXC_C14N_URI],
       SHA256_DIGEST_URI,
     );
-
-    // Canonicalization algorithm for SignedInfo
     sig.canonicalizationAlgorithm = EXC_C14N_URI;
-
-    // Signature algorithm URI — written into SignedInfo XML
-    // (actual crypto is handled by our override, not xml-crypto's RSA impl)
     sig.signatureAlgorithm = ECDSA_SHA256_URI;
 
-    // 4. Compute signature (ECDSA-SHA256 is now registered with xml-crypto)
-    //
-    // WORKAROUND: xmldom (used by xml-crypto) cannot parse default XML namespaces
-    // (xmlns="...") correctly. It fails with "invalid attribute:xmlns:" and then
-    // "could not find SignedInfo element in the message".
-    //
-    // Fix: temporarily convert the default namespace to an explicit "inv:" prefix
-    // for parsing, then extract the Signature element and insert into the original XML.
-    // The Signature element itself only uses the "ds:" prefix and is not affected.
+    // xmldom workaround — same as before
     const invNs = 'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2';
     const cacNs = 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2';
     const cbcNs = 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2';
     const extNs = 'urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2';
 
-    // Pre-process: add inv: prefix for xmldom compatibility
-    let xmlForSigning = xmlWithQR
+    let xmlForSigning = xml
       .replace('<Invoice ', '<inv:Invoice ')
       .replace('xmlns="', 'xmlns:inv="')
       .replace('</Invoice>', '</inv:Invoice>');
@@ -241,25 +229,56 @@ export function signInvoice(params: SignParams): SignResult {
       },
     });
 
-    // 5. Extract the <ds:Signature> element
     const signatureXml = sig.getSignatureXml();
 
-    // 6. Build UBL DocumentSignatures wrapper
+    // Extract the actual SignatureValue from XML-DSig for QR Tag 7
+    const sigValueMatch = signatureXml.match(/<ds:SignatureValue>([^<]+)<\/ds:SignatureValue>/);
+    const xmlDsigSignatureValue = sigValueMatch ? sigValueMatch[1] : '';
+
     const ublSignature = buildUBLSignatureBlock(signatureXml);
 
-    // 8. Replace empty UBLExtensions with signed version
-    const signedXml = xmlWithQR.replace(
+    // Replace empty UBLExtensions with signed version
+    let signedXml = xml.replace(
       /<ext:UBLExtensions>[\s\S]*?<\/ext:UBLExtensions>/,
       `<ext:UBLExtensions>${ublSignature}</ext:UBLExtensions>`,
     );
 
-    // 9. Compute final invoice hash from signed XML.
-    //    Use same canonicalization as step 1 (strip UBLExtensions, Signature, QR).
-    //    The hash should be the same since we only changed UBLExtensions content
-    //    which gets stripped. But recompute to be safe with exact signed XML.
-    const finalHash = canonicalizeForHash(signedXml).hashBase64;
+    // Generate and embed QR AFTER signing
+    if (qrData) {
+      const qrBase64 = generatePhase2TLVBinary({
+        sellerName: qrData.sellerName,
+        vatNumber: qrData.vatNumber,
+        timestamp: qrData.timestamp,
+        totalWithVat: qrData.totalWithVat,
+        vatTotal: qrData.vatTotal,
+        invoiceHash,
+        signatureValue: xmlDsigSignatureValue,
+        publicKey: rawPublicKey,
+        certificateSignature: qrData.certificateSignature,
+      });
 
-    return { signedXml, invoiceHash: finalHash, signatureValue: ecdsaSignature };
+      // QR element has NO leading indentation — it inherits the whitespace
+      // from the insertion point. No trailing newline either, so that
+      // removing this element from the DOM leaves the same whitespace as
+      // the original XML (critical for hash consistency with ZATCA).
+      const qrElement = `<cac:AdditionalDocumentReference>
+    <cbc:ID>QR</cbc:ID>
+    <cac:Attachment>
+      <cbc:EmbeddedDocumentBinaryObject mimeCode="text/plain">${qrBase64}</cbc:EmbeddedDocumentBinaryObject>
+    </cac:Attachment>
+  </cac:AdditionalDocumentReference>`;
+
+      const insertionPoint = signedXml.indexOf('<cac:AdditionalDocumentReference');
+      const signaturePoint = signedXml.indexOf('<cac:Signature>');
+      if (insertionPoint !== -1) {
+        signedXml = signedXml.slice(0, insertionPoint) + qrElement + signedXml.slice(insertionPoint);
+      } else if (signaturePoint !== -1) {
+        signedXml = signedXml.slice(0, signaturePoint) + qrElement + signedXml.slice(signaturePoint);
+      }
+    }
+
+    // Return the original invoiceHash (from step 1) which is what's in the QR.
+    return { signedXml, invoiceHash, signatureValue: xmlDsigSignatureValue };
   } catch (error) {
     if (error instanceof ZatcaError) throw error;
     throw new ZatcaError(
@@ -300,7 +319,7 @@ export function computeInvoiceHashBase64(xml: string): string {
  * 1. Remove UBLExtensions elements
  * 2. Remove cac:Signature elements
  * 3. Remove QR AdditionalDocumentReference (optional)
- * 4. Apply C14N canonicalization (preserving whitespace)
+ * 4. Apply Exclusive C14N canonicalization (exc-c14n, preserving whitespace)
  * 5. SHA-256 hash + Base64 encode
  */
 export function canonicalizeForHash(xml: string, stripQR = true): { canonical: string; hash: string; hashBase64: string } {
@@ -341,8 +360,8 @@ export function canonicalizeForHash(xml: string, stripQR = true): { canonical: s
     }
   }
 
-  // C14N canonicalization — preserve whitespace, matching ZATCA SDK behavior
-  const canonicalizer = new XmlCanonicalizer(false, false);
+  // Exclusive C14N (exc-c14n) canonicalization — ZATCA requires exc-c14n for hash computation
+  const canonicalizer = new XmlCanonicalizer(false, true);
   const canonical = canonicalizer.Canonicalize(doc as unknown as Node) as string;
 
   const hashBytes = crypto.createHash('sha256').update(canonical, 'utf8').digest();
@@ -414,8 +433,8 @@ function buildUBLSignatureBlock(signatureXml: string): string {
                                    xmlns:sbc="urn:oasis:names:specification:ubl:schema:xsd:SignatureBasicComponents-2"
                                    xmlns:ds="${DS_NS}">
           <sac:SignatureInformation>
-            <cbc:ID xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">urn:oasis:names:specification:ubl:signature:1</cbc:ID>
-            <sbc:ReferencedSignatureID>urn:oasis:names:specification:ubl:signature:1</sbc:ReferencedSignatureID>
+            <cbc:ID xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">urn:oasis:names:specification:ubl:signature:Invoice</cbc:ID>
+            <sbc:ReferencedSignatureID>urn:oasis:names:specification:ubl:signature:Invoice</sbc:ReferencedSignatureID>
             ${signatureXml}
           </sac:SignatureInformation>
         </sig:UBLDocumentSignatures>

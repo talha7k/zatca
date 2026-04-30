@@ -29,3 +29,4 @@ export * from './qrcode/index.js';
 export * from './api/index.js';
 export * from './invoice/index.js';
 export * from './hash-chain/index.js';
+export * from './compliance/index.js';

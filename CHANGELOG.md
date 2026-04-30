@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - 2026-04-30
+
+### Added
+- **`compliance/` module** — Full ZATCA compliance check support:
+  - `buildComplianceInvoiceXml()` — Generates compliance test invoice XML (simplified & standard, credit notes & debit notes)
+  - `signComplianceInvoice()` — Builds and signs a compliance invoice in one call
+  - `normalizeArabicDigits()`, `normalizeZatcaBuildingNumber()`, `normalizeZatcaPostalCode()` — Arabic digit and ZATCA field normalization
+  - `asCertificatePem()` — Smart PEM detection (handles PEM, base64 DER, double-encoded DER)
+  - `extractXmlValue()`, `extractInvoiceUuid()`, `extractInvoiceTimestamp()` — XML value extraction utilities
+  - Types: `ZatcaComplianceCheckType`, `BuildComplianceInvoiceXmlInput`, `SignComplianceInvoiceInput`, etc.
+
+### Changed
+- **Signing pipeline refactored** — QR code is now embedded **after** XML-DSig signing (not before). QR Tag 7 signature value is extracted from `ds:SignatureValue` to match ZATCA's expected value exactly.
+- **Canonicalization switched to exc-c14n** — `canonicalizeForHash()` now uses Exclusive XML Canonicalization (`exc-c14n`) instead of plain C14N, matching ZATCA SDK requirements.
+- **Signature IDs updated** — UBL DocumentSignatures changed from `urn:oasis:names:specification:ubl:signature:1` to `urn:oasis:names:specification:ubl:signature:Invoice`.
+- **Public key extraction improved** — `extractQrPublicKey()` now tries X509Certificate first, falls back to private key derivation. Used for QR Tag 8.
+- **Local TLV encoding** — `generatePhase2TLVBinary()` replaces the `@talha7k/zatca-qr` dependency in the signing pipeline for direct control over QR generation.
+- **QR whitespace handling** — QR element no longer has leading indentation or trailing newline, ensuring hash consistency with ZATCA when the element is stripped during canonicalization.
+- **Removed `@talha7k/zatca-qr` dependency from signing** — signing module is now self-contained for TLV generation.
+
 ## [0.6.0] - 2026-04-29
 
 ### Added
