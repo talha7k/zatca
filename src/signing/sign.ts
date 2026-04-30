@@ -86,7 +86,7 @@ export interface QRInvoiceData {
 export interface SignResult {
   /** Signed XML with ECDSA signature embedded in UBLExtensions */
   signedXml: string;
-  /** SHA-256 hex hash of the invoice (for hash chain PIH and QR Tag 6) */
+  /** Base64-encoded SHA-256 hash of the invoice (for hash chain PIH and QR Tag 6) */
   invoiceHash: string;
   /** Base64-encoded ECDSA signature value (for QR Tag 7) */
   signatureValue: string;
@@ -120,6 +120,24 @@ function encodeTLVText(tag: number, value: string): string {
   return encodeTLVBytes(tag, Buffer.from(value, 'utf8'));
 }
 
+function base64ToBytes(fieldName: string, value: string): Buffer {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return Buffer.alloc(0);
+  const bytes = Buffer.from(trimmed, 'base64');
+  if (bytes.toString('base64').replace(/=+$/, '') !== trimmed.replace(/=+$/, '')) {
+    throw new Error(`${fieldName} must be valid base64`);
+  }
+  return bytes;
+}
+
+function invoiceHashToBytes(invoiceHash: string): Buffer {
+  const trimmed = invoiceHash.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
+    return Buffer.from(trimmed, 'hex');
+  }
+  return base64ToBytes('invoiceHash', trimmed);
+}
+
 function generatePhase2TLVBinary(data: {
   sellerName: string;
   vatNumber: string;
@@ -137,10 +155,10 @@ function generatePhase2TLVBinary(data: {
     encodeTLVText(3, data.timestamp.trim()),
     encodeTLVText(4, data.totalWithVat.trim()),
     encodeTLVText(5, (data.vatTotal ?? '0.00').trim()),
-    encodeTLVBytes(6, Buffer.from(data.invoiceHash.trim(), 'base64')),
-    encodeTLVBytes(7, Buffer.from(data.signatureValue.trim(), 'base64')),
-    encodeTLVBytes(8, Buffer.from(data.publicKey.trim(), 'base64')),
-    encodeTLVBytes(9, Buffer.from(data.certificateSignature.trim(), 'base64')),
+    encodeTLVBytes(6, invoiceHashToBytes(data.invoiceHash)),
+    encodeTLVBytes(7, base64ToBytes('signatureValue', data.signatureValue)),
+    encodeTLVBytes(8, base64ToBytes('publicKey', data.publicKey)),
+    encodeTLVBytes(9, base64ToBytes('certificateSignature', data.certificateSignature)),
   ].join('');
   return Buffer.from(hex, 'hex').toString('base64');
 }
@@ -176,8 +194,10 @@ export function signInvoice(params: SignParams): SignResult {
   try {
     const { xml, privateKeyPem, certificatePem, qrData } = params;
 
-    // 1. Compute invoice hash from original XML (without UBLExtensions, Signature, QR)
-    const { canonical, hashBase64: invoiceHash } = canonicalizeForHash(xml);
+    // 1. Canonical hash is recomputed from the exact XML returned below,
+    // after signature insertion and before QR insertion. QR is stripped during
+    // hash computation, so the returned API hash and QR Tag 6 stay identical.
+    canonicalizeForHash(xml);
 
     // 2. The ECDSA signature for QR Tag 7 is extracted from the XML-DSig
     //    SignatureValue after computeSignature() below. ZATCA requires
@@ -242,38 +262,58 @@ export function signInvoice(params: SignParams): SignResult {
       /<ext:UBLExtensions>[\s\S]*?<\/ext:UBLExtensions>/,
       `<ext:UBLExtensions>${ublSignature}</ext:UBLExtensions>`,
     );
+    let invoiceHash = canonicalizeForHash(signedXml).hashBase64;
 
-    // Generate and embed QR AFTER signing
-    if (qrData) {
-      const qrBase64 = generatePhase2TLVBinary({
+    const buildQrBase64 = (hashBase64: string): string => {
+      if (!qrData) return '';
+      return generatePhase2TLVBinary({
         sellerName: qrData.sellerName,
         vatNumber: qrData.vatNumber,
         timestamp: qrData.timestamp,
         totalWithVat: qrData.totalWithVat,
         vatTotal: qrData.vatTotal,
-        invoiceHash,
+        invoiceHash: hashBase64,
         signatureValue: xmlDsigSignatureValue,
         publicKey: rawPublicKey,
         certificateSignature: qrData.certificateSignature,
       });
+    };
 
+    // Generate and embed QR AFTER signing
+    if (qrData) {
       // QR element has NO leading indentation — it inherits the whitespace
       // from the insertion point. No trailing newline either, so that
       // removing this element from the DOM leaves the same whitespace as
       // the original XML (critical for hash consistency with ZATCA).
-      const qrElement = `<cac:AdditionalDocumentReference>
+      const qrElement = (qrBase64: string) => `<cac:AdditionalDocumentReference>
     <cbc:ID>QR</cbc:ID>
     <cac:Attachment>
       <cbc:EmbeddedDocumentBinaryObject mimeCode="text/plain">${qrBase64}</cbc:EmbeddedDocumentBinaryObject>
     </cac:Attachment>
   </cac:AdditionalDocumentReference>`;
 
-      const insertionPoint = signedXml.indexOf('<cac:AdditionalDocumentReference');
-      const signaturePoint = signedXml.indexOf('<cac:Signature>');
-      if (insertionPoint !== -1) {
-        signedXml = signedXml.slice(0, insertionPoint) + qrElement + signedXml.slice(insertionPoint);
-      } else if (signaturePoint !== -1) {
-        signedXml = signedXml.slice(0, signaturePoint) + qrElement + signedXml.slice(signaturePoint);
+      const insertQr = (xmlWithSignature: string, qrBase64: string): string => {
+        const withoutExistingQr = xmlWithSignature.replace(
+          /<cac:AdditionalDocumentReference>\s*<cbc:ID>QR<\/cbc:ID>[\s\S]*?<\/cac:AdditionalDocumentReference>/,
+          '',
+        );
+        const insertionPoint = withoutExistingQr.indexOf('<cac:AdditionalDocumentReference');
+        const signaturePoint = withoutExistingQr.indexOf('<cac:Signature>');
+        const element = qrElement(qrBase64);
+        if (insertionPoint !== -1) {
+          return withoutExistingQr.slice(0, insertionPoint) + element + withoutExistingQr.slice(insertionPoint);
+        }
+        if (signaturePoint !== -1) {
+          return withoutExistingQr.slice(0, signaturePoint) + element + withoutExistingQr.slice(signaturePoint);
+        }
+        throw new Error('Could not insert QR: missing AdditionalDocumentReference or Signature anchor');
+      };
+
+      signedXml = insertQr(signedXml, buildQrBase64(invoiceHash));
+      const hashAfterQrInsert = canonicalizeForHash(signedXml).hashBase64;
+      if (hashAfterQrInsert !== invoiceHash) {
+        invoiceHash = hashAfterQrInsert;
+        signedXml = insertQr(signedXml, buildQrBase64(invoiceHash));
       }
     }
 
@@ -433,7 +473,7 @@ function buildUBLSignatureBlock(signatureXml: string): string {
                                    xmlns:sbc="urn:oasis:names:specification:ubl:schema:xsd:SignatureBasicComponents-2"
                                    xmlns:ds="${DS_NS}">
           <sac:SignatureInformation>
-            <cbc:ID xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">urn:oasis:names:specification:ubl:signature:Invoice</cbc:ID>
+            <cbc:ID xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">urn:oasis:names:specification:ubl:signature:1</cbc:ID>
             <sbc:ReferencedSignatureID>urn:oasis:names:specification:ubl:signature:Invoice</sbc:ReferencedSignatureID>
             ${signatureXml}
           </sac:SignatureInformation>
