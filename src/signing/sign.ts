@@ -62,7 +62,7 @@ SignedXml.SignatureAlgorithms['http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha2
 // ---------------------------------------------------------------------------
 
 export interface SignParams {
-  /** Raw UBL 2.1 XML string (with empty ext:UBLExtensions placeholder) */
+  /** Raw UBL 2.1 Invoice or CreditNote XML string (with empty ext:UBLExtensions placeholder) */
   xml: string;
   /** ECDSA private key in PEM format */
   privateKeyPem: string;
@@ -176,6 +176,22 @@ function extractQrPublicKey(certificatePem: string, privateKeyPem: string): stri
   }
 }
 
+function getUblRoot(xml: string): { name: 'Invoice' | 'CreditNote'; namespace: string } {
+  if (/<Invoice(?:\s|>)/.test(xml)) {
+    return {
+      name: 'Invoice',
+      namespace: 'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2',
+    };
+  }
+  if (/<CreditNote(?:\s|>)/.test(xml)) {
+    return {
+      name: 'CreditNote',
+      namespace: 'urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2',
+    };
+  }
+  throw new Error('Unsupported UBL document: expected Invoice or CreditNote root element');
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -193,6 +209,7 @@ function extractQrPublicKey(certificatePem: string, privateKeyPem: string): stri
 export function signInvoice(params: SignParams): SignResult {
   try {
     const { xml, privateKeyPem, certificatePem, qrData } = params;
+    const ublRoot = getUblRoot(xml);
 
     // 1. Canonical hash is recomputed from the exact XML returned below,
     // after signature insertion and before QR insertion. QR is stripped during
@@ -221,7 +238,7 @@ export function signInvoice(params: SignParams): SignResult {
         `<ds:X509Data><ds:X509Certificate>${certBase64}</ds:X509Certificate></ds:X509Data>`,
     };
     sig.addReference(
-      "//*[local-name(.)='Invoice']",
+      `//*[local-name(.)='${ublRoot.name}']`,
       [ENVELOPED_SIGNATURE_URI, EXC_C14N_URI],
       SHA256_DIGEST_URI,
     );
@@ -229,20 +246,19 @@ export function signInvoice(params: SignParams): SignResult {
     sig.signatureAlgorithm = ECDSA_SHA256_URI;
 
     // xmldom workaround — same as before
-    const invNs = 'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2';
     const cacNs = 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2';
     const cbcNs = 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2';
     const extNs = 'urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2';
 
     let xmlForSigning = xml
-      .replace('<Invoice ', '<inv:Invoice ')
+      .replace(`<${ublRoot.name} `, `<inv:${ublRoot.name} `)
       .replace('xmlns="', 'xmlns:inv="')
-      .replace('</Invoice>', '</inv:Invoice>');
+      .replace(`</${ublRoot.name}>`, `</inv:${ublRoot.name}>`);
 
     sig.computeSignature(xmlForSigning, {
       prefix: 'ds',
       existingPrefixes: {
-        inv: invNs,
+        inv: ublRoot.namespace,
         cac: cacNs,
         cbc: cbcNs,
         ext: extNs,
