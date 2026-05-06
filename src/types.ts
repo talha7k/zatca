@@ -59,6 +59,12 @@ export interface TaxSubtotal {
   taxCategoryId: TaxCategoryId;
 }
 
+export interface AllowanceCharge {
+  chargeIndicator: boolean;
+  reason: string;
+  amount: number;
+}
+
 export interface InvoiceLineItem {
   id: number;
   quantity: number;
@@ -69,6 +75,7 @@ export interface InvoiceLineItem {
   taxCategoryId: TaxCategoryId;
   taxPercent: number;
   priceAmount: number;
+  allowanceCharges?: AllowanceCharge[];
 }
 
 export interface InvoiceData {
@@ -95,6 +102,7 @@ export interface InvoiceData {
   taxExclusiveAmount: number;
   taxInclusiveAmount: number;
   allowanceTotalAmount?: number;
+  allowanceCharges?: AllowanceCharge[];
   payableAmount: number;
   taxAmount: number;
 

@@ -22,6 +22,7 @@ import type {
   PostalAddress,
   TaxSubtotal,
   InvoiceLineItem,
+  AllowanceCharge,
 } from '../types.js';
 import { escapeXml, formatAmount } from '../utils/xml.js';
 
@@ -212,6 +213,26 @@ function xmlTaxSubtotal(subtotal: TaxSubtotal, currencyCode: string): string {
 }
 
 /**
+ * Allowance/charge block.
+ */
+function xmlAllowanceCharge(charge: AllowanceCharge, currencyCode: string, indent: string): string {
+  return `${indent}<cac:AllowanceCharge>
+${indent}  <cbc:ChargeIndicator>${charge.chargeIndicator ? 'true' : 'false'}</cbc:ChargeIndicator>
+${indent}  <cbc:AllowanceChargeReason>${escapeXml(charge.reason)}</cbc:AllowanceChargeReason>
+${indent}  <cbc:Amount currencyID="${escapeXml(currencyCode)}">${formatAmount(charge.amount)}</cbc:Amount>
+${indent}</cac:AllowanceCharge>`;
+}
+
+/**
+ * Document-level allowance/charge blocks.
+ */
+function xmlAllowanceCharges(invoice: InvoiceData): string {
+  return (invoice.allowanceCharges ?? [])
+    .map((charge) => xmlAllowanceCharge(charge, invoice.currencyCode, '  '))
+    .join('\n');
+}
+
+/**
  * Legal monetary total block.
  */
 function xmlMonetaryTotal(invoice: InvoiceData): string {
@@ -231,10 +252,15 @@ function xmlMonetaryTotal(invoice: InvoiceData): string {
  * Single invoice line block with TaxTotal including RoundingAmount.
  */
 function xmlInvoiceLine(line: InvoiceLineItem, currencyCode: string): string {
+  const allowanceCharges = (line.allowanceCharges ?? [])
+    .map((charge) => xmlAllowanceCharge(charge, currencyCode, '    '))
+    .join('\n');
+  const allowanceChargeBlock = allowanceCharges ? `\n${allowanceCharges}` : '';
+
   return `  <cac:InvoiceLine>
     <cbc:ID>${line.id}</cbc:ID>
     <cbc:InvoicedQuantity unitCode="${escapeXml(line.unitCode)}">${formatAmount(line.quantity)}</cbc:InvoicedQuantity>
-    <cbc:LineExtensionAmount currencyID="${escapeXml(currencyCode)}">${formatAmount(line.lineExtensionAmount)}</cbc:LineExtensionAmount>
+    <cbc:LineExtensionAmount currencyID="${escapeXml(currencyCode)}">${formatAmount(line.lineExtensionAmount)}</cbc:LineExtensionAmount>${allowanceChargeBlock}
     <cac:TaxTotal>
       <cbc:TaxAmount currencyID="${escapeXml(currencyCode)}">${formatAmount(line.taxAmount)}</cbc:TaxAmount>
       <cbc:RoundingAmount currencyID="${escapeXml(currencyCode)}">${formatAmount(line.lineExtensionAmount + line.taxAmount)}</cbc:RoundingAmount>
@@ -296,6 +322,8 @@ ${xmlUBLExtensions()}
 ${additionalDocsBlock}${xmlSignature()}
 
 ${xmlSupplierParty(invoice.supplier)}${customerBlock}
+
+${xmlAllowanceCharges(invoice)}
 
 ${xmlTaxTotalBlocks(invoice.taxAmount, invoice.currencyCode, invoice.taxSubtotals)}
 

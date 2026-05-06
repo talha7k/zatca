@@ -34,9 +34,19 @@ export function validateInvoice(invoice: InvoiceData): void {
   // Amounts
   if (invoice.taxAmount < 0) errors.push('taxAmount must be non-negative');
   if (invoice.payableAmount < 0) errors.push('payableAmount must be non-negative');
+  for (const charge of invoice.allowanceCharges ?? []) {
+    if (!charge.reason) errors.push('allowanceCharges.reason is required');
+    if (charge.amount < 0) errors.push('allowanceCharges.amount must be non-negative');
+  }
 
   // Line items
   if (!invoice.invoiceLines?.length) errors.push('At least one invoice line is required');
+  for (const line of invoice.invoiceLines ?? []) {
+    for (const charge of line.allowanceCharges ?? []) {
+      if (!charge.reason) errors.push('invoiceLines.allowanceCharges.reason is required');
+      if (charge.amount < 0) errors.push('invoiceLines.allowanceCharges.amount must be non-negative');
+    }
+  }
 
   if (errors.length > 0) {
     throw new ZatcaError(
