@@ -11,6 +11,8 @@
 import { describe, test, expect, beforeAll } from 'bun:test';
 import crypto from 'crypto';
 import {
+  asCertificatePem,
+  extractCertificateSignature,
   generateCSR,
   generateInvoiceXml,
   signInvoice,
@@ -87,6 +89,46 @@ let complianceCredentials: ZatcaCredentials;
 let productionCSID: ZatcaCSIDResponse;
 let productionCredentials: ZatcaCredentials;
 
+function createDiscountedInvoice(overrides = {}) {
+  return createTestInvoice({
+    lineExtensionAmount: 100,
+    taxExclusiveAmount: 90,
+    taxInclusiveAmount: 103.5,
+    allowanceTotalAmount: 10,
+    allowanceCharges: [
+      {
+        chargeIndicator: false,
+        reason: 'Discount',
+        amount: 10,
+      },
+    ],
+    payableAmount: 103.5,
+    taxAmount: 13.5,
+    taxSubtotals: [
+      {
+        taxableAmount: 90,
+        taxAmount: 13.5,
+        percent: 15,
+        taxCategoryId: 'S',
+      },
+    ],
+    invoiceLines: [
+      {
+        id: 1,
+        quantity: 1,
+        unitCode: 'PCE',
+        lineExtensionAmount: 100,
+        taxAmount: 13.5,
+        itemName: 'Discounted Product',
+        taxCategoryId: 'S',
+        taxPercent: 15,
+        priceAmount: 100,
+      },
+    ],
+    ...overrides,
+  });
+}
+
 describe('ZATCA Sandbox Integration', () => {
   beforeAll(() => {
     client = new ZatcaApiClient({
@@ -151,19 +193,23 @@ describe('ZATCA Sandbox Integration', () => {
   // ============================================
   // STEP 3: Generate + Sign Invoice for Compliance
   // ============================================
-  test('Step 3: Generate and sign simplified invoice', () => {
-    const invoiceData = createTestInvoice();
+  test('Step 3: Generate and sign discounted simplified invoice', () => {
+    const invoiceData = createDiscountedInvoice();
 
     // Generate XML
     const xml = generateInvoiceXml(invoiceData);
     expect(xml).toContain('Invoice');
     expect(xml).toContain('UBLVersionID');
     expect(xml).toContain(invoiceData.invoiceNumber);
+    expect(xml).toContain('<cac:AllowanceCharge>');
+    expect(xml).toContain('<cbc:AllowanceTotalAmount currencyID="SAR">10.00</cbc:AllowanceTotalAmount>');
+    expect(xml).toContain('<cbc:TaxableAmount currencyID="SAR">90.00</cbc:TaxableAmount>');
+    expect(xml).toContain('<cbc:PayableAmount currencyID="SAR">103.50</cbc:PayableAmount>');
 
     // binarySecurityToken is base64-encoded DER certificate.
     // Wrap with PEM headers to create proper PEM string.
     const b64Der = complianceCSID.binarySecurityToken;
-    const certPem = `-----BEGIN CERTIFICATE-----\n${b64Der.match(/.{1,64}/g)!.join('\n')}\n-----END CERTIFICATE-----`;
+    const certPem = asCertificatePem(b64Der);
 
     // Extract certificate signature for QR Tag 9.
     // Tag 9 = ZATCA CA signature on the certificate (the signatureValue from the DER).
@@ -171,8 +217,7 @@ describe('ZATCA Sandbox Integration', () => {
     // We extract the signatureValue (third element).
     let certSignature = '';
     try {
-      const der = Buffer.from(b64Der, 'base64');
-      certSignature = extractCertSignatureFromDer(der);
+      certSignature = extractCertificateSignature(certPem);
     } catch (e) {
       console.log('   ⚠️ Could not extract cert signature:', (e as Error).message);
       certSignature = '';
@@ -192,6 +237,60 @@ describe('ZATCA Sandbox Integration', () => {
       vatTotal: invoiceData.taxAmount.toFixed(2),
       certificateSignature: certSignature,
     };
+
+    // --- DEBUG: Diagnose ASN.1 DECODE_ERROR before signing ---
+    console.log('\n🔍 [Step 3 DEBUG] Certificate & key diagnostics:');
+
+    // 1. Raw b64Der length and first/last 50 chars
+    console.log(`   b64Der length: ${b64Der.length}`);
+    console.log(`   b64Der first 50: "${b64Der.substring(0, 50)}"`);
+    console.log(`   b64Der last 50:  "${b64Der.substring(b64Der.length - 50)}"`);
+
+    // 2. certPem first 5 lines and last 3 lines
+    const certPemLines = certPem.split('\n');
+    console.log(`   certPem total lines: ${certPemLines.length}`);
+    console.log('   certPem first 5 lines:');
+    for (const line of certPemLines.slice(0, 5)) {
+      console.log(`     ${line}`);
+    }
+    console.log('   certPem last 3 lines:');
+    for (const line of certPemLines.slice(-3)) {
+      console.log(`     ${line}`);
+    }
+
+    // 3. Try parsing cert with X509Certificate
+    try {
+      const x509 = new crypto.X509Certificate(certPem);
+      console.log('   ✅ X509Certificate parsed successfully');
+      console.log(`      subject:    ${x509.subject}`);
+      console.log(`      issuer:     ${x509.issuer}`);
+      console.log(`      validFrom:  ${x509.validFrom}`);
+      console.log(`      validTo:    ${x509.validTo}`);
+    } catch (certErr) {
+      console.log(`   ❌ X509Certificate parse failed: ${(certErr as Error).message}`);
+    }
+
+    // 4. Private key first 2 lines and last line
+    const keyLines = privateKey.split('\n');
+    console.log(`   privateKey total lines: ${keyLines.length}`);
+    console.log('   privateKey first 2 lines:');
+    for (const line of keyLines.slice(0, 2)) {
+      console.log(`     ${line}`);
+    }
+    console.log(`   privateKey last line: ${keyLines[keyLines.length - 1]}`);
+
+    // 5. Try createPublicKey on private key
+    try {
+      const pubKey = crypto.createPublicKey(privateKey);
+      console.log('   ✅ createPublicKey succeeded');
+      console.log(`      type:             ${pubKey.type}`);
+      console.log(`      asymmetricKeyType: ${pubKey.asymmetricKeyType}`);
+    } catch (keyErr) {
+      console.log(`   ❌ createPublicKey failed: ${(keyErr as Error).message}`);
+    }
+
+    console.log('🔍 [Step 3 DEBUG] End diagnostics\n');
+    // --- END DEBUG ---
 
     const signResult = signInvoice({
       xml,
@@ -247,6 +346,8 @@ describe('ZATCA Sandbox Integration', () => {
 
     // Don't hard-fail on validation errors — sandbox validation rules vary.
     // Just log the result so we can see what ZATCA returns.
+    expect(result.messages.join(' ').toLowerCase()).not.toContain('discount');
+    expect(result.messages.join(' ').toLowerCase()).not.toContain('allowance');
   }, SANDBOX_TIMEOUT);
 
   // ============================================
@@ -282,22 +383,25 @@ describe('ZATCA Sandbox Integration', () => {
   // ============================================
   test('Step 6: Report simplified invoice (POST /invoices/reporting/single)', async () => {
     // Generate a NEW invoice for reporting (different from compliance)
-    const invoiceData = createTestInvoice({
+    const invoiceData = createDiscountedInvoice({
       invoiceNumber: 'SME00002',
       invoiceCounter: 2,
     });
 
     const xml = generateInvoiceXml(invoiceData);
+    expect(xml).toContain('<cac:AllowanceCharge>');
+    expect(xml).toContain('<cbc:AllowanceTotalAmount currencyID="SAR">10.00</cbc:AllowanceTotalAmount>');
+    expect(xml).toContain('<cbc:TaxableAmount currencyID="SAR">90.00</cbc:TaxableAmount>');
+    expect(xml).toContain('<cbc:PayableAmount currencyID="SAR">103.50</cbc:PayableAmount>');
 
     // Decode production certificate
     const b64Der = productionCSID.binarySecurityToken;
-    const certPem = `-----BEGIN CERTIFICATE-----\n${b64Der.match(/.{1,64}/g)!.join('\n')}\n-----END CERTIFICATE-----`;
+    const certPem = asCertificatePem(b64Der);
 
     // Extract certificate signature for QR Tag 9
     let certSignature = '';
     try {
-      const der = Buffer.from(b64Der, 'base64');
-      certSignature = extractCertSignatureFromDer(der);
+      certSignature = extractCertificateSignature(certPem);
     } catch (e) {
       console.log('   ⚠️ Could not extract cert signature:', (e as Error).message);
       certSignature = '';
@@ -312,6 +416,60 @@ describe('ZATCA Sandbox Integration', () => {
       vatTotal: invoiceData.taxAmount.toFixed(2),
       certificateSignature: certSignature,
     };
+
+    // --- DEBUG: Diagnose ASN.1 DECODE_ERROR before signing ---
+    console.log('\n🔍 [Step 6 DEBUG] Certificate & key diagnostics:');
+
+    // 1. Raw b64Der length and first/last 50 chars
+    console.log(`   b64Der length: ${b64Der.length}`);
+    console.log(`   b64Der first 50: "${b64Der.substring(0, 50)}"`);
+    console.log(`   b64Der last 50:  "${b64Der.substring(b64Der.length - 50)}"`);
+
+    // 2. certPem first 5 lines and last 3 lines
+    const certPemLines = certPem.split('\n');
+    console.log(`   certPem total lines: ${certPemLines.length}`);
+    console.log('   certPem first 5 lines:');
+    for (const line of certPemLines.slice(0, 5)) {
+      console.log(`     ${line}`);
+    }
+    console.log('   certPem last 3 lines:');
+    for (const line of certPemLines.slice(-3)) {
+      console.log(`     ${line}`);
+    }
+
+    // 3. Try parsing cert with X509Certificate
+    try {
+      const x509 = new crypto.X509Certificate(certPem);
+      console.log('   ✅ X509Certificate parsed successfully');
+      console.log(`      subject:    ${x509.subject}`);
+      console.log(`      issuer:     ${x509.issuer}`);
+      console.log(`      validFrom:  ${x509.validFrom}`);
+      console.log(`      validTo:    ${x509.validTo}`);
+    } catch (certErr) {
+      console.log(`   ❌ X509Certificate parse failed: ${(certErr as Error).message}`);
+    }
+
+    // 4. Private key first 2 lines and last line
+    const keyLines = privateKey.split('\n');
+    console.log(`   privateKey total lines: ${keyLines.length}`);
+    console.log('   privateKey first 2 lines:');
+    for (const line of keyLines.slice(0, 2)) {
+      console.log(`     ${line}`);
+    }
+    console.log(`   privateKey last line: ${keyLines[keyLines.length - 1]}`);
+
+    // 5. Try createPublicKey on private key
+    try {
+      const pubKey = crypto.createPublicKey(privateKey);
+      console.log('   ✅ createPublicKey succeeded');
+      console.log(`      type:             ${pubKey.type}`);
+      console.log(`      asymmetricKeyType: ${pubKey.asymmetricKeyType}`);
+    } catch (keyErr) {
+      console.log(`   ❌ createPublicKey failed: ${(keyErr as Error).message}`);
+    }
+
+    console.log('🔍 [Step 6 DEBUG] End diagnostics\n');
+    // --- END DEBUG ---
 
     const signResult = signInvoice({
       xml,
@@ -341,6 +499,8 @@ describe('ZATCA Sandbox Integration', () => {
         '   Raw response:',
         result.rawBody.substring(0, 500),
       );
+      expect(result.rawBody.toLowerCase()).not.toContain('discount');
+      expect(result.rawBody.toLowerCase()).not.toContain('allowance');
     }
 
     // Store UUID for status check

@@ -63,6 +63,8 @@ export interface AllowanceCharge {
   chargeIndicator: boolean;
   reason: string;
   amount: number;
+  taxCategoryId?: TaxCategoryId;
+  taxPercent?: number;
 }
 
 export interface InvoiceLineItem {

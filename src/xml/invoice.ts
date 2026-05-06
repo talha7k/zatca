@@ -215,11 +215,31 @@ function xmlTaxSubtotal(subtotal: TaxSubtotal, currencyCode: string): string {
 /**
  * Allowance/charge block.
  */
-function xmlAllowanceCharge(charge: AllowanceCharge, currencyCode: string, indent: string): string {
+function xmlAllowanceCharge(
+  charge: AllowanceCharge,
+  currencyCode: string,
+  indent: string,
+  taxCategory?: { id: string; percent: number },
+): string {
+  const effectiveTaxCategory = charge.taxCategoryId && charge.taxPercent !== undefined
+    ? { id: charge.taxCategoryId, percent: charge.taxPercent }
+    : taxCategory;
+  const taxCategoryBlock = effectiveTaxCategory
+    ? `
+${indent}  <cac:TaxCategory>
+${indent}    <cbc:ID>${escapeXml(effectiveTaxCategory.id)}</cbc:ID>
+${indent}    <cbc:Percent>${formatAmount(effectiveTaxCategory.percent)}</cbc:Percent>
+${indent}    <cac:TaxScheme>
+${indent}      <cbc:ID>VAT</cbc:ID>
+${indent}    </cac:TaxScheme>
+${indent}  </cac:TaxCategory>`
+    : '';
+
   return `${indent}<cac:AllowanceCharge>
 ${indent}  <cbc:ChargeIndicator>${charge.chargeIndicator ? 'true' : 'false'}</cbc:ChargeIndicator>
 ${indent}  <cbc:AllowanceChargeReason>${escapeXml(charge.reason)}</cbc:AllowanceChargeReason>
 ${indent}  <cbc:Amount currencyID="${escapeXml(currencyCode)}">${formatAmount(charge.amount)}</cbc:Amount>
+${taxCategoryBlock}
 ${indent}</cac:AllowanceCharge>`;
 }
 
@@ -227,8 +247,14 @@ ${indent}</cac:AllowanceCharge>`;
  * Document-level allowance/charge blocks.
  */
 function xmlAllowanceCharges(invoice: InvoiceData): string {
+  const defaultTaxCategory = invoice.taxSubtotals[0]
+    ? {
+        id: invoice.taxSubtotals[0].taxCategoryId,
+        percent: invoice.taxSubtotals[0].percent,
+      }
+    : undefined;
   return (invoice.allowanceCharges ?? [])
-    .map((charge) => xmlAllowanceCharge(charge, invoice.currencyCode, '  '))
+    .map((charge) => xmlAllowanceCharge(charge, invoice.currencyCode, '  ', defaultTaxCategory))
     .join('\n');
 }
 
@@ -241,9 +267,9 @@ function xmlMonetaryTotal(invoice: InvoiceData): string {
     : '';
 
   return `  <cac:LegalMonetaryTotal>
-    <cbc:LineExtensionAmount currencyID="${escapeXml(invoice.currencyCode)}">${formatAmount(invoice.lineExtensionAmount)}</cbc:LineExtensionAmount>${allowanceBlock}
+    <cbc:LineExtensionAmount currencyID="${escapeXml(invoice.currencyCode)}">${formatAmount(invoice.lineExtensionAmount)}</cbc:LineExtensionAmount>
     <cbc:TaxExclusiveAmount currencyID="${escapeXml(invoice.currencyCode)}">${formatAmount(invoice.taxExclusiveAmount)}</cbc:TaxExclusiveAmount>
-    <cbc:TaxInclusiveAmount currencyID="${escapeXml(invoice.currencyCode)}">${formatAmount(invoice.taxInclusiveAmount)}</cbc:TaxInclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="${escapeXml(invoice.currencyCode)}">${formatAmount(invoice.taxInclusiveAmount)}</cbc:TaxInclusiveAmount>${allowanceBlock}
     <cbc:PayableAmount currencyID="${escapeXml(invoice.currencyCode)}">${formatAmount(invoice.payableAmount)}</cbc:PayableAmount>
   </cac:LegalMonetaryTotal>`;
 }
@@ -253,7 +279,12 @@ function xmlMonetaryTotal(invoice: InvoiceData): string {
  */
 function xmlInvoiceLine(line: InvoiceLineItem, currencyCode: string): string {
   const allowanceCharges = (line.allowanceCharges ?? [])
-    .map((charge) => xmlAllowanceCharge(charge, currencyCode, '    '))
+    .map((charge) =>
+      xmlAllowanceCharge(charge, currencyCode, '    ', {
+        id: line.taxCategoryId,
+        percent: line.taxPercent,
+      }),
+    )
     .join('\n');
   const allowanceChargeBlock = allowanceCharges ? `\n${allowanceCharges}` : '';
 

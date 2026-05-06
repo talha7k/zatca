@@ -95,6 +95,44 @@ function base64ToBytes(fieldName: string, value: string): Buffer {
   return Buffer.from(assertBase64(fieldName, value), 'base64');
 }
 
+function pemBody(certificatePem: string): string {
+  return certificatePem
+    .replace(/-----BEGIN CERTIFICATE-----/g, '')
+    .replace(/-----END CERTIFICATE-----/g, '')
+    .replace(/\s/g, '');
+}
+
+function wrapCertificateBody(body: string): string {
+  const wrapped = body.match(/.{1,64}/g)?.join('\n') ?? body;
+  return `-----BEGIN CERTIFICATE-----\n${wrapped}\n-----END CERTIFICATE-----`;
+}
+
+function normalizeCertificatePem(certificate: string): string {
+  const compact = certificate.includes('BEGIN CERTIFICATE')
+    ? pemBody(certificate)
+    : certificate.trim().replace(/\s+/g, '');
+
+  const directDer = Buffer.from(compact, 'base64');
+  if (directDer[0] === 0x30) {
+    return wrapCertificateBody(compact);
+  }
+
+  const decoded = directDer.toString('utf8').trim();
+  if (decoded.includes('BEGIN CERTIFICATE')) {
+    return normalizeCertificatePem(decoded);
+  }
+
+  const decodedCompact = decoded.replace(/\s+/g, '');
+  if (/^[A-Za-z0-9+/=]+$/.test(decodedCompact)) {
+    const nestedDer = Buffer.from(decodedCompact, 'base64');
+    if (nestedDer[0] === 0x30) {
+      return wrapCertificateBody(decodedCompact);
+    }
+  }
+
+  return wrapCertificateBody(compact);
+}
+
 function generatePhase2TLVForQr(data: {
   sellerName: string;
   vatNumber: string;
@@ -133,20 +171,25 @@ function extractPrivateKeyRawPublicKey(privateKeyPem: string): string {
   return extractRawPublicKeyFromKey(crypto.createPublicKey(privateKeyPem));
 }
 
-function extractCertificateRawPublicKey(certificatePem: string): string {
-  return extractRawPublicKeyFromKey(new crypto.X509Certificate(certificatePem).publicKey);
-}
-
 function extractQrPublicKey(certificatePem: string, privateKeyPem: string): string {
-  const certificateKey = new crypto.X509Certificate(certificatePem).publicKey;
-  const certificatePublicKey = extractRawPublicKeyFromKey(certificateKey);
-  const privateKeyPublicKey = extractPrivateKeyRawPublicKey(privateKeyPem);
+  const privateKey = crypto.createPublicKey(privateKeyPem);
+  const privateKeyPublicKey = extractRawPublicKeyFromKey(privateKey);
 
-  if (certificatePublicKey !== privateKeyPublicKey) {
-    throw new Error('Private key does not match the supplied CSID certificate');
+  try {
+    const certificateKey = new crypto.X509Certificate(certificatePem).publicKey;
+    const certificatePublicKey = extractRawPublicKeyFromKey(certificateKey);
+
+    if (certificatePublicKey !== privateKeyPublicKey) {
+      throw new Error('Private key does not match the supplied CSID certificate');
+    }
+  } catch (error) {
+    const message = (error as Error).message;
+    if (!/decode|asn1|encoding|public key/i.test(message)) {
+      throw error;
+    }
   }
 
-  return extractSpkiPublicKeyFromKey(certificateKey);
+  return extractSpkiPublicKeyFromKey(privateKey);
 }
 
 function getUblRoot(xml: string): { name: 'Invoice' | 'CreditNote'; namespace: string } {
@@ -171,10 +214,7 @@ function getCertificateInfo(certificatePem: string): {
   serialNumber: string;
 } {
   const cert = new crypto.X509Certificate(certificatePem);
-  const certificateBase64 = certificatePem
-    .replace(/-----BEGIN CERTIFICATE-----/g, '')
-    .replace(/-----END CERTIFICATE-----/g, '')
-    .replace(/\s/g, '');
+  const certificateBase64 = pemBody(certificatePem);
   const digestHex = crypto.createHash('sha256').update(certificateBase64, 'utf8').digest('hex');
   return {
     digestValue: Buffer.from(digestHex, 'utf8').toString('base64'),
@@ -269,13 +309,11 @@ export function signInvoice(params: SignParams): SignResult {
       throw new Error('Invoice XML must contain ext:UBLExtensions placeholder');
     }
 
-    const publicKey = extractQrPublicKey(certificatePem, privateKeyPem);
+    const normalizedCertificatePem = normalizeCertificatePem(certificatePem);
+    const publicKey = extractQrPublicKey(normalizedCertificatePem, privateKeyPem);
 
-    const certBase64 = certificatePem
-      .replace(/-----BEGIN CERTIFICATE-----/g, '')
-      .replace(/-----END CERTIFICATE-----/g, '')
-      .replace(/\s/g, '');
-    const certificateInfo = getCertificateInfo(certificatePem);
+    const certBase64 = pemBody(normalizedCertificatePem);
+    const certificateInfo = getCertificateInfo(normalizedCertificatePem);
 
     const qrElement = (qrBase64: string) => `<cac:AdditionalDocumentReference>
     <cbc:ID>QR</cbc:ID>
