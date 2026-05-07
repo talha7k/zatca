@@ -1,10 +1,10 @@
-import type { CSRParams, InvoiceData } from '../../src/types.js';
+import type { CSRParams, CreditNoteData, InvoiceData } from '../../src/types.js';
 
 export const TEST_CSR_PARAMS: CSRParams = {
   organizationNameAr: 'شركة اختبار',
   organizationNameEn: 'Test Company',
   vatNumber: '300000000000003', // 15 digits starting and ending with 3
-  crNumber: '1234567890',
+  crNumber: '1010010000',
   country: 'SA',
   commonName: 'Test Company',
   invoiceType: '1100', // 4-digit: standard+simplified (matching official spec)
@@ -46,7 +46,7 @@ export function createTestInvoice(overrides?: Partial<InvoiceData>): InvoiceData
       nameAr: 'شركة اختبار',
       nameEn: 'Test Company',
       vatNumber: '300000000000003',
-      crNumber: '1234567890',
+      crNumber: '1010010000',
       address: {
         street: 'King Fahd Road',
         building: '8008',
@@ -87,6 +87,22 @@ export function createTestInvoice(overrides?: Partial<InvoiceData>): InvoiceData
       },
     ],
 
+    ...overrides,
+  };
+}
+
+export function createTestCreditNote(overrides?: Partial<CreditNoteData>): CreditNoteData {
+  return {
+    ...createTestInvoice({
+      invoiceNumber: 'SCN00001',
+      invoiceTypeCode: '381',
+      invoiceTypeCodeName: '0200000',
+      profileId: 'reporting:1.0',
+    }),
+    originalInvoiceNumber: 'SME00001',
+    originalInvoiceUuid: crypto.randomUUID(),
+    originalInvoiceDate: new Date().toISOString().split('T')[0],
+    reason: 'Returned goods',
     ...overrides,
   };
 }

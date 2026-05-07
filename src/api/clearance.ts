@@ -10,7 +10,9 @@ import type {
   ZatcaCredentials,
   SubmitInvoiceRequest,
   ZatcaSubmitResult,
+  ZatcaApiWarning,
 } from '../types.js';
+import { extractValidationDiagnostics } from './diagnostics.js';
 
 export class ClearanceApi extends ZatcaHttpClient {
   /**
@@ -50,9 +52,32 @@ export class ClearanceApi extends ZatcaHttpClient {
       const invoice = accepted || rejected;
 
       if (invoice) {
+        const diagnostics = extractValidationDiagnostics(data.validationResults);
+        const invoiceWarnings = (invoice.warnings || []).map(
+          (w: { code?: string; category?: string; message?: string }) => ({
+            code: w.code || '',
+            category: w.category || '',
+            message: w.message || '',
+          }),
+        );
+        const invoiceAlerts = invoiceWarnings.map((warning: ZatcaApiWarning) => ({
+          severity: 'warning' as const,
+          code: warning.code,
+          category: warning.category,
+          message: warning.message,
+        }));
+
         return {
           success: !!accepted,
           httpStatus: response.status,
+          error: invoice.error
+            ? {
+                code: invoice.error.code || '',
+                category: invoice.error.category || '',
+                message: invoice.error.message || '',
+              }
+            : diagnostics.error,
+          alerts: [...diagnostics.alerts, ...invoiceAlerts],
           response: {
             uuid: invoice.uuid || '',
             invoiceHash: invoice.invoiceHash || '',
@@ -66,14 +91,8 @@ export class ClearanceApi extends ZatcaHttpClient {
                   category: invoice.error.category || '',
                   message: invoice.error.message || '',
                 }
-              : undefined,
-            warnings: (invoice.warnings || []).map(
-              (w: { code?: string; category?: string; message?: string }) => ({
-                code: w.code || '',
-                category: w.category || '',
-                message: w.message || '',
-              }),
-            ),
+              : diagnostics.error,
+            warnings: invoiceWarnings,
           },
           rawBody: response.body,
         };
@@ -94,6 +113,14 @@ export class ClearanceApi extends ZatcaHttpClient {
           category: 'CLIENT',
           message: `Failed to parse clearance response: ${parseError}`,
         },
+        alerts: [
+          {
+            severity: 'error',
+            code: 'PARSE_ERROR',
+            category: 'CLIENT',
+            message: `Failed to parse clearance response: ${parseError}`,
+          },
+        ],
         rawBody: response.body,
       };
     }

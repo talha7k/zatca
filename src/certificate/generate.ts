@@ -299,13 +299,19 @@ export function generateCSR(params: CSRParams, environment: string = 'production
         privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
       }));
     } catch {
-      // Bun's BoringSSL doesn't support secp256k1 — fall back to prime256v1 (P-256)
+      if (environment === 'production') {
+        throw new ZatcaError(
+          'secp256k1 is required for production CSR generation, but this runtime does not support it',
+          ZatcaErrorCode.CERT_GEN_ERROR,
+        );
+      }
+
+      // Bun's BoringSSL doesn't support secp256k1 — sandbox falls back to prime256v1 (P-256)
       ({ privateKey, publicKey } = crypto.generateKeyPairSync('ec', {
         namedCurve: 'prime256v1',
         publicKeyEncoding: { type: 'spki', format: 'pem' },
         privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
       }));
-      console.warn('[zatca] secp256k1 not available, using prime256v1 (P-256). ZATCA may reject this in production.');
     }
 
     // 2. Build Subject DN
@@ -387,13 +393,12 @@ export function generateECDSAKeyPair(): { privateKey: string; publicKey: string 
     });
     return { privateKey, publicKey };
   } catch {
-    // Bun's BoringSSL doesn't support secp256k1 — fall back to prime256v1 (P-256)
+    // Bun's BoringSSL doesn't support secp256k1 — non-production tooling may fall back to prime256v1 (P-256).
     const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', {
       namedCurve: 'prime256v1',
       publicKeyEncoding: { type: 'spki', format: 'pem' },
       privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
     });
-    console.warn('[zatca] secp256k1 not available, using prime256v1 (P-256). ZATCA may reject this in production.');
     return { privateKey, publicKey };
   }
 }

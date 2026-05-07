@@ -9,14 +9,13 @@ export type ZatcaEnvironment = 'sandbox' | 'production';
 // ---- Invoice Types ----
 
 export type InvoiceTypeCode = '388' | '381' | '383';
-// 388 = Simplified Tax Invoice (B2C)
-// 381 = Standard Tax Invoice (B2B)
+// 388 = Tax Invoice (standard or simplified, differentiated by InvoiceTypeCodeName)
+// 381 = Credit Note
 // 383 = Debit Note
 
 export type InvoiceTypeCodeName =
-  | '0200000'  // Simplified (B2C)
-  | '0100000'  // Standard (B2B)
-  | '0300000'; // Debit Note
+  | '0100000'  // Standard document (B2B) — clearance
+  | '0200000'; // Simplified document (B2C) — reporting
 
 export type TaxCategoryId = 'S' | 'Z' | 'E' | 'O' | 'AE';
 // S = Standard rated
@@ -122,6 +121,8 @@ export interface CreditNoteData extends InvoiceData {
   reason: string;
 }
 
+export type ZatcaDocumentData = InvoiceData | CreditNoteData;
+
 // ---- API Types ----
 
 export interface ZatcaCredentials {
@@ -147,6 +148,7 @@ export interface ZatcaSubmitResult {
   success: boolean;
   response?: ZatcaInvoiceResponse;
   error?: ZatcaApiError;
+  alerts?: ZatcaSubmissionAlert[];
   httpStatus: number;
   rawBody?: string;
 }
@@ -179,6 +181,13 @@ export interface ZatcaApiError {
 }
 
 export interface ZatcaApiWarning {
+  code: string;
+  category: string;
+  message: string;
+}
+
+export interface ZatcaSubmissionAlert {
+  severity: 'error' | 'warning';
   code: string;
   category: string;
   message: string;

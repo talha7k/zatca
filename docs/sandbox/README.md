@@ -67,9 +67,12 @@ GET  /invoices/status/request/{requestId} → Check status by request ID
 
 | Type Code | Code Name | Profile | API Endpoint | Description |
 |-----------|-----------|---------|-------------|-------------|
+| `388` | `0100000` | `clearance:1.0` | `/invoices/clearance/single` | Standard Tax Invoice (B2B) |
 | `388` | `0200000` | `reporting:1.0` | `/invoices/reporting/single` | Simplified Tax Invoice (B2C) |
-| `381` | `0100000` | `clearance:1.0` | `/invoices/clearance/single` | Standard Tax Invoice (B2B) |
-| `383` | `0300000` | `clearance:1.0` | `/invoices/clearance/single` | Debit Note |
+| `381` | `0100000` | `clearance:1.0` | `/invoices/clearance/single` | Standard Credit Note |
+| `381` | `0200000` | `reporting:1.0` | `/invoices/reporting/single` | Simplified Credit Note |
+| `383` | `0100000` | `clearance:1.0` | `/invoices/clearance/single` | Standard Debit Note |
+| `383` | `0200000` | `reporting:1.0` | `/invoices/reporting/single` | Simplified Debit Note |
 
 ---
 
@@ -77,8 +80,8 @@ GET  /invoices/status/request/{requestId} → Check status by request ID
 
 | Value | Mode | Use Case |
 |-------|------|----------|
-| `0` | Reporting | Simplified (B2C) invoices via `/invoices/reporting/single` |
-| `1` | Clearance | Standard (B2B) invoices via `/invoices/clearance/single` |
+| `0` | Reporting | Simplified documents via `/invoices/reporting/single` |
+| `1` | Clearance | Standard documents via `/invoices/clearance/single` |
 
 > ⚠️ *Note from implementation:* The `Clearance-Status` header value defaults to `1` in the client config but should be explicitly set to `0` for reporting endpoints.
 

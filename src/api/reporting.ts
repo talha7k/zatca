@@ -11,7 +11,9 @@ import type {
   ZatcaCredentials,
   SubmitInvoiceRequest,
   ZatcaSubmitResult,
+  ZatcaApiWarning,
 } from '../types.js';
+import { extractValidationDiagnostics } from './diagnostics.js';
 
 export class ReportingApi extends ZatcaHttpClient {
   private readonly retryMax: number;
@@ -96,32 +98,20 @@ export class ReportingApi extends ZatcaHttpClient {
       const reportingStatus = data.reportingStatus;
       if (reportingStatus) {
         const isSuccess = reportingStatus === 'REPORTED';
-        const errors: Array<{ message: string; code?: string; category?: string }> =
-          data.validationResults?.errorMessages || [];
-        const warnings: Array<{ message: string; code?: string; category?: string }> =
-          data.validationResults?.warningMessages || [];
+        const diagnostics = extractValidationDiagnostics(data.validationResults);
 
         return {
           success: isSuccess,
           httpStatus: response.status,
+          error: diagnostics.error,
+          alerts: diagnostics.alerts,
           response: {
             uuid: data.uuid || '',
             invoiceHash: data.invoiceHash || '',
             reportingStatus,
             status: isSuccess ? 'ACCEPTED' : 'REJECTED',
-            error:
-              errors.length > 0
-                ? {
-                    code: errors[0].code || '',
-                    category: errors[0].category || '',
-                    message: errors.map((e) => e.message).join('; '),
-                  }
-                : undefined,
-            warnings: warnings.map((w) => ({
-              code: w.code || '',
-              category: w.category || '',
-              message: w.message || '',
-            })),
+            error: diagnostics.error,
+            warnings: diagnostics.warnings,
           },
           rawBody: response.body,
         };
@@ -133,9 +123,32 @@ export class ReportingApi extends ZatcaHttpClient {
       const invoice = accepted || rejected;
 
       if (invoice) {
+        const diagnostics = extractValidationDiagnostics(data.validationResults);
+        const invoiceWarnings = (invoice.warnings || []).map(
+          (w: { code?: string; category?: string; message?: string }) => ({
+            code: w.code || '',
+            category: w.category || '',
+            message: w.message || '',
+          }),
+        );
+        const invoiceAlerts = invoiceWarnings.map((warning: ZatcaApiWarning) => ({
+          severity: 'warning' as const,
+          code: warning.code,
+          category: warning.category,
+          message: warning.message,
+        }));
+
         return {
           success: !!accepted,
           httpStatus: response.status,
+          error: invoice.error
+            ? {
+                code: invoice.error.code || '',
+                category: invoice.error.category || '',
+                message: invoice.error.message || '',
+              }
+            : diagnostics.error,
+          alerts: [...diagnostics.alerts, ...invoiceAlerts],
           response: {
             uuid: invoice.uuid || '',
             invoiceHash: invoice.invoiceHash || '',
@@ -149,14 +162,8 @@ export class ReportingApi extends ZatcaHttpClient {
                   category: invoice.error.category || '',
                   message: invoice.error.message || '',
                 }
-              : undefined,
-            warnings: (invoice.warnings || []).map(
-              (w: { code?: string; category?: string; message?: string }) => ({
-                code: w.code || '',
-                category: w.category || '',
-                message: w.message || '',
-              }),
-            ),
+              : diagnostics.error,
+            warnings: invoiceWarnings,
           },
           rawBody: response.body,
         };
@@ -177,6 +184,14 @@ export class ReportingApi extends ZatcaHttpClient {
           category: 'CLIENT',
           message: `Failed to parse ZATCA response: ${parseError}`,
         },
+        alerts: [
+          {
+            severity: 'error',
+            code: 'PARSE_ERROR',
+            category: 'CLIENT',
+            message: `Failed to parse ZATCA response: ${parseError}`,
+          },
+        ],
         rawBody: response.body,
       };
     }

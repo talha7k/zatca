@@ -9,7 +9,7 @@
 
 ---
 
-Submit standard tax invoices for clearance by ZATCA. Standard invoices (type code `381`, profile `clearance:1.0`) are used for B2B transactions. Clearance is synchronous — the invoice must be cleared before delivery to the buyer.
+Submit standard documents for clearance by ZATCA. Standard tax invoices use type code `388` with subtype `0100000`; standard credit notes use type code `381` with subtype `0100000`; standard debit notes use type code `383` with subtype `0100000`. Clearance is synchronous — the document must be cleared before delivery to the buyer.
 
 ## Authentication
 

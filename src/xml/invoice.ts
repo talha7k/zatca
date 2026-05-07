@@ -78,7 +78,9 @@ function xmlAdditionalDocumentReferences(invoice: InvoiceData): string {
   if (invoice.previousInvoiceHash) {
     refs.push(`  <cac:AdditionalDocumentReference>
     <cbc:ID>PIH</cbc:ID>
-    <cbc:DocumentDescription>${escapeXml(invoice.previousInvoiceHash)}</cbc:DocumentDescription>
+    <cac:Attachment>
+      <cbc:EmbeddedDocumentBinaryObject mimeCode="text/plain">${escapeXml(invoice.previousInvoiceHash)}</cbc:EmbeddedDocumentBinaryObject>
+    </cac:Attachment>
   </cac:AdditionalDocumentReference>`);
   }
 
@@ -158,13 +160,16 @@ function xmlCustomerParty(customer: CustomerInfo): string {
 
   return `  <cac:AccountingCustomerParty>
     <cac:Party>
-      <cbc:RegistrationName>${escapeXml(customer.name)}</cbc:RegistrationName>${addressBlock}
+${addressBlock}
       <cac:PartyTaxScheme>
         <cbc:CompanyID>${escapeXml(customer.vatNumber)}</cbc:CompanyID>
         <cac:TaxScheme>
           <cbc:ID>VAT</cbc:ID>
         </cac:TaxScheme>
       </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>${escapeXml(customer.name)}</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
     </cac:Party>
   </cac:AccountingCustomerParty>`;
 }

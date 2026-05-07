@@ -12,15 +12,17 @@
  */
 
 import type {
-  InvoiceData,
+  CreditNoteData,
+  SubmissionType,
   ZatcaCredentials,
   ZatcaApiConfig,
   ZatcaSubmitResult,
   HashChainState,
+  ZatcaDocumentData,
 } from '../types.js';
 import { ZatcaError, ZatcaErrorCode } from '../errors.js';
 import { validateInvoice } from '../utils/validation.js';
-import { generateInvoiceXml } from '../xml/index.js';
+import { generateCreditNoteXml, generateInvoiceXml } from '../xml/index.js';
 import { signInvoice } from '../signing/index.js';
 import { generatePhase2TLV } from '@talha7k/zatca-qr';
 import { ZatcaApiClient } from '../api/index.js';
@@ -31,8 +33,8 @@ import { extractPublicKey } from '../certificate/index.js';
 // ---------------------------------------------------------------------------
 
 export interface SubmitOptions {
-  /** Invoice data to submit */
-  invoice: InvoiceData;
+  /** Invoice or credit note data to submit. `invoice` is kept for backwards compatibility. */
+  invoice: ZatcaDocumentData;
   /** ECDSA private key in PEM format */
   privateKeyPem: string;
   /** ZATCA CSID certificate in PEM format */
@@ -45,6 +47,12 @@ export interface SubmitOptions {
   apiConfig: ZatcaApiConfig;
   /** Current hash chain state (for PIH / ICV) */
   hashChainState?: HashChainState;
+  /**
+   * Override submission route. Defaults to the ZATCA document subtype/profile:
+   * standard documents (`0100000` / `clearance:1.0`) use clearance, simplified
+   * documents (`0200000` / `reporting:1.0`) use reporting.
+   */
+  submissionType?: SubmissionType;
 }
 
 export interface SubmitResult {
@@ -67,16 +75,16 @@ export interface SubmitResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Full invoice submission pipeline:
+ * Full invoice or credit-note submission pipeline:
  *
  * 1. Validate invoice data
  * 2. Generate UBL 2.1 XML
  * 3. Sign with ECDSA-SHA256 (xml-crypto + Node.js crypto)
  * 4. Generate QR code TLV (Phase 2, 9 tags)
- * 5. Submit to ZATCA (clearance for B2B/381, reporting for B2C/388)
+ * 5. Submit to ZATCA (clearance for standard subtype 01, reporting for simplified subtype 02)
  * 6. Update hash chain on success
  */
-export async function submitInvoice(options: SubmitOptions): Promise<SubmitResult> {
+export async function submitDocument(options: SubmitOptions): Promise<SubmitResult> {
   const {
     invoice,
     privateKeyPem,
@@ -108,11 +116,13 @@ export async function submitInvoice(options: SubmitOptions): Promise<SubmitResul
   }
 
   try {
-    // 1. Validate invoice data
-    validateInvoice(invoice);
+    // 1. Validate document data
+    validateDocument(invoice);
 
     // 2. Generate UBL 2.1 XML
-    const xml = generateInvoiceXml(invoice);
+    const xml = isCreditNoteData(invoice)
+      ? generateCreditNoteXml(invoice)
+      : generateInvoiceXml(invoice);
 
     // 3. Sign with ECDSA-SHA256
     const { signedXml, invoiceHash, signatureValue } = signInvoice({
@@ -144,9 +154,8 @@ export async function submitInvoice(options: SubmitOptions): Promise<SubmitResul
       invoice: base64Invoice,
     };
 
-    // B2B invoices (type 381) use clearance; B2C (388) use reporting
-    const isB2B = invoice.invoiceTypeCode === '381';
-    const zatcaResult = isB2B
+    const submissionType = options.submissionType ?? resolveSubmissionType(invoice);
+    const zatcaResult = submissionType === 'CLEARANCE'
       ? await client.submitForClearance(credentials, request)
       : await client.submitForReporting(credentials, request);
 
@@ -175,6 +184,71 @@ export async function submitInvoice(options: SubmitOptions): Promise<SubmitResul
       `Invoice submission pipeline failed: ${(error as Error).message}`,
       ZatcaErrorCode.SIGN_ERROR,
       error,
+    );
+  }
+}
+
+/**
+ * Backwards-compatible alias for invoice callers. Also accepts credit notes
+ * because ZATCA treats invoices, credit notes, and debit notes as e-invoicing
+ * documents submitted through the same clearance/reporting APIs.
+ */
+export async function submitInvoice(options: SubmitOptions): Promise<SubmitResult> {
+  return submitDocument(options);
+}
+
+export function isCreditNoteData(document: ZatcaDocumentData): document is CreditNoteData {
+  return (
+    'originalInvoiceNumber' in document ||
+    'originalInvoiceUuid' in document ||
+    'originalInvoiceDate' in document ||
+    'reason' in document
+  );
+}
+
+export function resolveSubmissionType(document: ZatcaDocumentData): SubmissionType {
+  if (document.profileId === 'clearance:1.0' || document.invoiceTypeCodeName === '0100000') {
+    return 'CLEARANCE';
+  }
+  return 'REPORTING';
+}
+
+function validateDocument(document: ZatcaDocumentData): void {
+  validateInvoice(document);
+
+  if (isCreditNoteData(document)) {
+    const errors: string[] = [];
+    if (document.invoiceTypeCode !== '381') {
+      errors.push('credit notes must use invoiceTypeCode 381');
+    }
+    if (!document.originalInvoiceNumber) {
+      errors.push('originalInvoiceNumber is required for credit notes');
+    }
+    if (!document.originalInvoiceUuid) {
+      errors.push('originalInvoiceUuid is required for credit notes');
+    }
+    if (!document.originalInvoiceDate) {
+      errors.push('originalInvoiceDate is required for credit notes');
+    }
+    if (!document.reason) {
+      errors.push('reason is required for credit notes');
+    }
+
+    if (errors.length > 0) {
+      throw new ZatcaError(
+        `Credit note validation failed: ${errors.join('; ')}`,
+        ZatcaErrorCode.VALIDATION_ERROR,
+        { errors },
+      );
+    }
+    return;
+  }
+
+  if (document.invoiceTypeCode !== '388') {
+    throw new ZatcaError(
+      'tax invoices must use invoiceTypeCode 388',
+      ZatcaErrorCode.VALIDATION_ERROR,
+      { errors: ['tax invoices must use invoiceTypeCode 388'] },
     );
   }
 }

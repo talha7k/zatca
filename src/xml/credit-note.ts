@@ -2,13 +2,11 @@
  * Credit Note XML Generation — UBL 2.1 for ZATCA Phase 2
  *
  * Generates ZATCA-compliant UBL 2.1 XML credit notes using template literals.
- * Credit notes share most of the invoice structure but differ in:
- * - Root element: `CreditNote` instead of `Invoice`
- * - `cbc:CreditNoteTypeCode` instead of `cbc:InvoiceTypeCode`
+ * ZATCA SDK/Fatoora samples model credit notes in the invoice document flow:
+ * - Root element: `Invoice`
+ * - `cbc:InvoiceTypeCode` value `381`
  * - `cac:BillingReference` pointing to the original invoice
- * - `cbc:Note` with the credit reason
- * - `cac:CreditNoteLine` instead of `cac:InvoiceLine`
- * - `cbc:CreditedQuantity` instead of `cbc:InvoicedQuantity`
+ * - `cac:PaymentMeans/cbc:InstructionNote` with the credit reason
  */
 
 import { ZatcaError, ZatcaErrorCode } from '../errors.js';
@@ -61,6 +59,18 @@ function xmlBillingReference(creditNote: CreditNoteData): string {
 }
 
 /**
+ * DiscrepancyResponse describes why this credit note corrects the original
+ * invoice. It appears before BillingReference in the UBL CreditNote sequence.
+ */
+function xmlDiscrepancyResponse(creditNote: CreditNoteData): string {
+  return `  <cac:DiscrepancyResponse>
+    <cbc:ReferenceID>${escapeXml(creditNote.originalInvoiceNumber)}</cbc:ReferenceID>
+    <cbc:ResponseCode>01</cbc:ResponseCode>
+    <cbc:Description>${escapeXml(creditNote.reason)}</cbc:Description>
+  </cac:DiscrepancyResponse>`;
+}
+
+/**
  * Empty UBLExtensions block — placeholder for signature and QR.
  */
 function xmlUBLExtensions(): string {
@@ -87,7 +97,9 @@ function xmlAdditionalDocumentReferences(creditNote: CreditNoteData): string {
   if (creditNote.previousInvoiceHash) {
     refs.push(`  <cac:AdditionalDocumentReference>
     <cbc:ID>PIH</cbc:ID>
-    <cbc:DocumentDescription>${escapeXml(creditNote.previousInvoiceHash)}</cbc:DocumentDescription>
+    <cac:Attachment>
+      <cbc:EmbeddedDocumentBinaryObject mimeCode="text/plain">${escapeXml(creditNote.previousInvoiceHash)}</cbc:EmbeddedDocumentBinaryObject>
+    </cac:Attachment>
   </cac:AdditionalDocumentReference>`);
   }
 
@@ -110,7 +122,7 @@ function xmlSignature(): string {
 function xmlPostalAddress(addr: PostalAddress, indent: string): string {
   return `${indent}<cac:PostalAddress>
 ${indent}  <cbc:StreetName>${escapeXml(addr.street)}</cbc:StreetName>
-${indent}  <cbc:AdditionalStreetName>${escapeXml(addr.building)}</cbc:AdditionalStreetName>
+${indent}  <cbc:BuildingNumber>${escapeXml(addr.building)}</cbc:BuildingNumber>
 ${indent}  <cbc:CitySubdivisionName>${escapeXml(addr.district)}</cbc:CitySubdivisionName>
 ${indent}  <cbc:CityName>${escapeXml(addr.city)}</cbc:CityName>
 ${indent}  <cbc:PostalZone>${escapeXml(addr.postalCode)}</cbc:PostalZone>
@@ -134,7 +146,6 @@ function xmlSupplierParty(supplier: SupplierInfo): string {
   return `  <cac:AccountingSupplierParty>
     <cac:Party>
 ${crBlock}
-      <cbc:RegistrationName>${escapeXml(supplier.nameAr)}</cbc:RegistrationName>
 ${xmlPostalAddress(supplier.address, '      ')}
       <cac:PartyTaxScheme>
         <cbc:CompanyID>${escapeXml(supplier.vatNumber)}</cbc:CompanyID>
@@ -143,7 +154,7 @@ ${xmlPostalAddress(supplier.address, '      ')}
         </cac:TaxScheme>
       </cac:PartyTaxScheme>
       <cac:PartyLegalEntity>
-        <cbc:RegistrationName>${escapeXml(supplier.nameEn)}</cbc:RegistrationName>
+        <cbc:RegistrationName>${escapeXml(supplier.nameAr)}</cbc:RegistrationName>
       </cac:PartyLegalEntity>
     </cac:Party>
   </cac:AccountingSupplierParty>`;
@@ -159,15 +170,29 @@ function xmlCustomerParty(customer: CustomerInfo): string {
 
   return `  <cac:AccountingCustomerParty>
     <cac:Party>
-      <cbc:RegistrationName>${escapeXml(customer.name)}</cbc:RegistrationName>${addressBlock}
+${addressBlock}
       <cac:PartyTaxScheme>
         <cbc:CompanyID>${escapeXml(customer.vatNumber)}</cbc:CompanyID>
         <cac:TaxScheme>
           <cbc:ID>VAT</cbc:ID>
         </cac:TaxScheme>
       </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>${escapeXml(customer.name)}</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
     </cac:Party>
   </cac:AccountingCustomerParty>`;
+}
+
+/**
+ * PaymentMeans block. ZATCA requires the reason for credit/debit notes in
+ * cbc:InstructionNote, even when the same reason is also exposed as cbc:Note.
+ */
+function xmlPaymentMeans(creditNote: CreditNoteData): string {
+  return `  <cac:PaymentMeans>
+    <cbc:PaymentMeansCode>10</cbc:PaymentMeansCode>
+    <cbc:InstructionNote>${escapeXml(creditNote.reason)}</cbc:InstructionNote>
+  </cac:PaymentMeans>`;
 }
 
 /**
@@ -277,7 +302,6 @@ function xmlMonetaryTotal(creditNote: CreditNoteData): string {
 
 /**
  * Single credit note line block with TaxTotal including RoundingAmount.
- * Uses `cbc:CreditedQuantity` instead of `cbc:InvoicedQuantity`.
  */
 function xmlCreditNoteLine(line: InvoiceLineItem, currencyCode: string): string {
   const allowanceCharges = (line.allowanceCharges ?? [])
@@ -290,9 +314,9 @@ function xmlCreditNoteLine(line: InvoiceLineItem, currencyCode: string): string 
     .join('\n');
   const allowanceChargeBlock = allowanceCharges ? `\n${allowanceCharges}` : '';
 
-  return `  <cac:CreditNoteLine>
+  return `  <cac:InvoiceLine>
     <cbc:ID>${line.id}</cbc:ID>
-    <cbc:CreditedQuantity unitCode="${escapeXml(line.unitCode)}">${formatAmount(line.quantity)}</cbc:CreditedQuantity>
+    <cbc:InvoicedQuantity unitCode="${escapeXml(line.unitCode)}">${formatAmount(line.quantity)}</cbc:InvoicedQuantity>
     <cbc:LineExtensionAmount currencyID="${escapeXml(currencyCode)}">${formatAmount(line.lineExtensionAmount)}</cbc:LineExtensionAmount>${allowanceChargeBlock}
     <cac:TaxTotal>
       <cbc:TaxAmount currencyID="${escapeXml(currencyCode)}">${formatAmount(line.taxAmount)}</cbc:TaxAmount>
@@ -311,7 +335,7 @@ function xmlCreditNoteLine(line: InvoiceLineItem, currencyCode: string): string 
     <cac:Price>
       <cbc:PriceAmount currencyID="${escapeXml(currencyCode)}">${formatAmount(line.priceAmount)}</cbc:PriceAmount>
     </cac:Price>
-  </cac:CreditNoteLine>`;
+  </cac:InvoiceLine>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -336,7 +360,7 @@ function buildCreditNoteXml(creditNote: CreditNoteData): string {
     .join('\n');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
             xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
             xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
             xmlns:ext="urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2">
@@ -347,15 +371,18 @@ ${xmlUBLExtensions()}
   <cbc:UUID>${escapeXml(creditNote.uuid)}</cbc:UUID>
   <cbc:IssueDate>${escapeXml(creditNote.issueDate)}</cbc:IssueDate>
   <cbc:IssueTime>${escapeXml(creditNote.issueTime)}</cbc:IssueTime>
-  <cbc:CreditNoteTypeCode name="${escapeXml(creditNote.invoiceTypeCodeName)}">${creditNote.invoiceTypeCode}</cbc:CreditNoteTypeCode>
+  <cbc:InvoiceTypeCode name="${escapeXml(creditNote.invoiceTypeCodeName)}">${creditNote.invoiceTypeCode}</cbc:InvoiceTypeCode>
   <cbc:Note>${escapeXml(creditNote.reason)}</cbc:Note>
   <cbc:DocumentCurrencyCode>${escapeXml(creditNote.currencyCode)}</cbc:DocumentCurrencyCode>
   <cbc:TaxCurrencyCode>${escapeXml(creditNote.currencyCode)}</cbc:TaxCurrencyCode>
-${additionalDocsBlock}${xmlSignature()}
 
 ${xmlBillingReference(creditNote)}
 
+${additionalDocsBlock}${xmlSignature()}
+
 ${xmlSupplierParty(creditNote.supplier)}${customerBlock}
+
+${xmlPaymentMeans(creditNote)}
 
 ${xmlAllowanceCharges(creditNote)}
 
@@ -364,5 +391,5 @@ ${xmlTaxTotalBlocks(creditNote.taxAmount, creditNote.currencyCode, creditNote.ta
 ${xmlMonetaryTotal(creditNote)}
 
 ${creditNoteLineBlocks}
-</CreditNote>`;
+</Invoice>`;
 }

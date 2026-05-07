@@ -173,23 +173,25 @@ function extractPrivateKeyRawPublicKey(privateKeyPem: string): string {
 
 function extractQrPublicKey(certificatePem: string, privateKeyPem: string): string {
   const privateKey = crypto.createPublicKey(privateKeyPem);
-  const privateKeyPublicKey = extractRawPublicKeyFromKey(privateKey);
+  const privateKeyPublicKey = extractSpkiPublicKeyFromKey(privateKey);
 
   try {
     const certificateKey = new crypto.X509Certificate(certificatePem).publicKey;
-    const certificatePublicKey = extractRawPublicKeyFromKey(certificateKey);
+    const certificatePublicKey = extractSpkiPublicKeyFromKey(certificateKey);
 
     if (certificatePublicKey !== privateKeyPublicKey) {
       throw new Error('Private key does not match the supplied CSID certificate');
     }
+
+    return certificatePublicKey;
   } catch (error) {
     const message = (error as Error).message;
-    if (!/decode|asn1|encoding|public key/i.test(message)) {
+    if (!/decode|asn1|encoding/i.test(message)) {
       throw error;
     }
   }
 
-  return extractSpkiPublicKeyFromKey(privateKey);
+  return privateKeyPublicKey;
 }
 
 function getUblRoot(xml: string): { name: 'Invoice' | 'CreditNote'; namespace: string } {
@@ -303,7 +305,7 @@ function buildSignatureXml(
 export function signInvoice(params: SignParams): SignResult {
   try {
     const { xml, privateKeyPem, certificatePem, qrData } = params;
-    getUblRoot(xml);
+    const ublRoot = getUblRoot(xml);
 
     if (!/<ext:UBLExtensions\b[\s\S]*?<\/ext:UBLExtensions>/.test(xml)) {
       throw new Error('Invoice XML must contain ext:UBLExtensions placeholder');
@@ -347,7 +349,7 @@ export function signInvoice(params: SignParams): SignResult {
       const canonicalSignedInfo = canonicalizeXml(signedInfoXml);
       const signatureValue = signSignedInfo(canonicalSignedInfo, privateKeyPem);
       const signatureXml = buildSignatureXml(signedInfoXml, signatureValue, certBase64, signedPropertiesXml);
-      const ublSignature = buildUBLSignatureBlock(signatureXml);
+      const ublSignature = buildUBLSignatureBlock(signatureXml, ublRoot.name);
       let signedXml = xml.replace(
         /<ext:UBLExtensions>[\s\S]*?<\/ext:UBLExtensions>/,
         `<ext:UBLExtensions>${ublSignature}</ext:UBLExtensions>`,
@@ -528,7 +530,7 @@ export function verifySignature(
  *   ext:UBLExtensions > ext:UBLExtension > ext:ExtensionContent
  *     > sig:UBLDocumentSignatures > sac:SignatureInformation
  */
-function buildUBLSignatureBlock(signatureXml: string): string {
+function buildUBLSignatureBlock(signatureXml: string, documentName: 'Invoice' | 'CreditNote'): string {
   return `    <ext:UBLExtension>
       <ext:ExtensionContent>
         <sig:UBLDocumentSignatures xmlns:sig="urn:oasis:names:specification:ubl:schema:xsd:CommonSignatureComponents-2"
@@ -537,7 +539,7 @@ function buildUBLSignatureBlock(signatureXml: string): string {
                                    xmlns:ds="${DS_NS}">
           <sac:SignatureInformation>
             <cbc:ID xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">urn:oasis:names:specification:ubl:signature:1</cbc:ID>
-            <sbc:ReferencedSignatureID>urn:oasis:names:specification:ubl:signature:Invoice</sbc:ReferencedSignatureID>
+            <sbc:ReferencedSignatureID>urn:oasis:names:specification:ubl:signature:${documentName}</sbc:ReferencedSignatureID>
             ${signatureXml}
           </sac:SignatureInformation>
         </sig:UBLDocumentSignatures>

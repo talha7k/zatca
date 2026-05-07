@@ -1,5 +1,5 @@
 import type { CustomerInfo, SupplierInfo } from '../types.js';
-import { generateInvoiceXml } from '../xml/index.js';
+import { generateCreditNoteXml, generateInvoiceXml } from '../xml/index.js';
 import { signInvoice } from '../signing/sign.js';
 import { extractCertificateSignature } from '../certificate/generate.js';
 
@@ -217,15 +217,76 @@ export function buildComplianceInvoiceXml(input: BuildComplianceInvoiceXmlInput)
   const invoiceTypeCode = isCredit ? '381' : isDebit ? '383' : '388';
   const invoiceTypeCodeName = isStandard ? '0100000' : '0200000';
   const now = new Date();
+  const uuid = input.uuid ?? crypto.randomUUID();
+  const issueDate = input.issueDate ?? now.toISOString().slice(0, 10);
+  const issueTime = input.issueTime ?? now.toISOString().slice(11, 19);
+  const originalInvoiceNumber =
+    input.originalInvoiceNumber ??
+    (input.checkType.startsWith('STANDARD') ? 'COMP-TI-001' : 'COMP-SI-001');
+  const originalInvoiceUuid = input.originalInvoiceUuid ?? crypto.randomUUID();
+  const originalInvoiceDate = input.originalInvoiceDate ?? issueDate;
+
+  if (isCredit) {
+    const xml = generateCreditNoteXml({
+      invoiceNumber,
+      uuid,
+      issueDate,
+      issueTime,
+      invoiceTypeCode,
+      invoiceTypeCodeName,
+      profileId: isStandard ? 'clearance:1.0' : 'reporting:1.0',
+      currencyCode: input.currencyCode ?? 'SAR',
+      invoiceCounter: input.invoiceCounter,
+      previousInvoiceHash: input.previousInvoiceHash ?? DEFAULT_COMPLIANCE_PREVIOUS_INVOICE_HASH,
+      supplier: normalizeSupplier(input.supplier),
+      customer: isStandard ? input.customer ?? defaultComplianceCustomer() : input.customer,
+      lineExtensionAmount: 100,
+      taxExclusiveAmount: 100,
+      taxInclusiveAmount: 115,
+      payableAmount: 115,
+      taxAmount: 15,
+      taxSubtotals: [
+        {
+          taxableAmount: 100,
+          taxAmount: 15,
+          percent: 15,
+          taxCategoryId: 'S',
+        },
+      ],
+      invoiceLines: [
+        {
+          id: 1,
+          quantity: 1,
+          unitCode: 'C62',
+          lineExtensionAmount: 100,
+          taxAmount: 15,
+          itemName: 'Compliance Credit Item',
+          taxCategoryId: 'S',
+          taxPercent: 15,
+          priceAmount: 100,
+        },
+      ],
+      originalInvoiceNumber,
+      originalInvoiceUuid,
+      originalInvoiceDate,
+      reason: 'Compliance test credit note',
+    });
+
+    return {
+      checkType: input.checkType,
+      invoiceXml: patchSignatureReference(patchAdditionalDocumentReferences(xml)),
+      uuid,
+    };
+  }
 
   const xml = patchCreditDebitInvoice(
     patchSignatureReference(
       patchAdditionalDocumentReferences(
         generateInvoiceXml({
           invoiceNumber,
-          uuid: input.uuid ?? crypto.randomUUID(),
-          issueDate: input.issueDate ?? now.toISOString().slice(0, 10),
-          issueTime: input.issueTime ?? now.toISOString().slice(11, 19),
+          uuid,
+          issueDate,
+          issueTime,
           invoiceTypeCode,
           invoiceTypeCodeName,
           profileId: isStandard ? 'clearance:1.0' : 'reporting:1.0',

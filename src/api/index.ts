@@ -13,6 +13,7 @@ export { ComplianceApi } from './compliance.js';
 export { ReportingApi } from './reporting.js';
 export { ClearanceApi } from './clearance.js';
 export { StatusApi } from './status.js';
+export { assertNoZatcaAlerts } from './diagnostics.js';
 export type { InvoiceStatusResult } from './status.js';
 
 import { ZatcaHttpClient } from './client.js';
@@ -20,6 +21,7 @@ import { ComplianceApi } from './compliance.js';
 import { ReportingApi } from './reporting.js';
 import { ClearanceApi } from './clearance.js';
 import { StatusApi } from './status.js';
+import { assertNoZatcaAlerts } from './diagnostics.js';
 import type {
   ZatcaApiConfig,
   ZatcaCredentials,
@@ -72,6 +74,15 @@ export class ZatcaApiClient extends ZatcaHttpClient {
     return this.reporting.reportInvoice(credentials, request);
   }
 
+  async submitForReportingOrThrow(
+    credentials: ZatcaCredentials,
+    request: SubmitInvoiceRequest,
+  ): Promise<ZatcaSubmitResult> {
+    const result = await this.submitForReporting(credentials, request);
+    assertNoZatcaAlerts(result, 'ZATCA reporting');
+    return result;
+  }
+
   // ---- Clearance (B2B) ----
 
   async submitForClearance(
@@ -79,6 +90,15 @@ export class ZatcaApiClient extends ZatcaHttpClient {
     request: SubmitInvoiceRequest,
   ): Promise<ZatcaSubmitResult> {
     return this.clearance.clearInvoice(credentials, request);
+  }
+
+  async submitForClearanceOrThrow(
+    credentials: ZatcaCredentials,
+    request: SubmitInvoiceRequest,
+  ): Promise<ZatcaSubmitResult> {
+    const result = await this.submitForClearance(credentials, request);
+    assertNoZatcaAlerts(result, 'ZATCA clearance');
+    return result;
   }
 
   // ---- Status ----

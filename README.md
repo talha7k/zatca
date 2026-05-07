@@ -112,12 +112,12 @@ import { ZatcaApiClient } from '@talha7k/zatca';
 const client = new ZatcaApiClient({ environment: 'sandbox' });
 
 // B2C simplified invoice
-const result = await client.submitForReporting(
+const result = await client.submitForReportingOrThrow(
   { binarySecurityToken: '...', secret: '...' },
   { invoiceHash, uuid: '...', invoice: Buffer.from(signedXml).toString('base64') },
 );
 
-console.log(result.success, result.response?.clearanceDateTime);
+console.log(result.response?.reportingStatus);
 ```
 
 ### 4. Full Pipeline (One Call)
@@ -217,6 +217,8 @@ All public functions wrap errors in `ZatcaError` with structured codes — no ra
 ### XML Generation
 - `generateInvoiceXml(invoice: InvoiceData)` — Generate UBL 2.1 invoice XML
 - `generateCreditNoteXml(creditNote: CreditNoteData)` — Generate UBL 2.1 credit note XML
+- Credit notes use type code `381`; invoices use type code `388`; debit notes use type code `383`.
+- Standard documents use subtype `0100000` and clearance; simplified documents use subtype `0200000` and reporting.
 
 ### Signing
 - `signInvoice({ xml, privateKeyPem, certificatePem, qrData? })` — ECDSA-SHA256 XML-DSig signing
@@ -234,8 +236,10 @@ All public functions wrap errors in `ZatcaError` with structured codes — no ra
 
 ### API Client
 - `new ZatcaApiClient(config: ZatcaApiConfig)` — Unified API client
-- `.submitForReporting(credentials, request)` — B2C simplified invoices (type 388)
-- `.submitForClearance(credentials, request)` — B2B standard invoices (type 381)
+- `.submitForReporting(credentials, request)` — Simplified documents (subtype `0200000`)
+- `.submitForReportingOrThrow(credentials, request)` — Fail-fast reporting with structured ZATCA alerts
+- `.submitForClearance(credentials, request)` — Standard documents (subtype `0100000`)
+- `.submitForClearanceOrThrow(credentials, request)` — Fail-fast clearance with structured ZATCA alerts
 - `.requestComplianceCSID(csr, otp?)` — Get compliance certificate
 - `.requestProductionCSID(credentials, requestId)` — Get production certificate
 - `.verifyCompliance(credentials, invoiceHash, uuid, invoice)` — Verify compliance CSID

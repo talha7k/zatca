@@ -55,6 +55,8 @@ describe('invoice discount allowance charges', () => {
     const parsed = parseInvoice(xml);
 
     expect(xml).toContain('<cbc:AllowanceTotalAmount currencyID="SAR">10.00</cbc:AllowanceTotalAmount>');
+    expect(xml).toContain('<cbc:ID>PIH</cbc:ID>');
+    expect(xml).toContain('<cbc:EmbeddedDocumentBinaryObject mimeCode="text/plain">');
     expect(parsed['cac:AllowanceCharge']['cbc:ChargeIndicator']).toBe(false);
     expect(parsed['cac:AllowanceCharge']['cbc:AllowanceChargeReason']).toBe('Discount');
     expect(parsed['cac:AllowanceCharge']['cbc:Amount']['#text']).toBe(10);
