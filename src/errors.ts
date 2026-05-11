@@ -6,7 +6,6 @@ export enum ZatcaErrorCode {
   // API errors
   API_ERROR = 'API_ERR',
   API_CONNECTION_ERROR = 'API_CONN_ERR',
-  API_REQUEST_ERROR = 'API_REQ_ERR',
   API_TIMEOUT = 'API_TIMEOUT_ERR',
 
   // Certificate errors
@@ -16,11 +15,9 @@ export enum ZatcaErrorCode {
 
   // XML errors
   XML_GEN_ERROR = 'XML_GEN_ERR',
-  XML_PARSE_ERROR = 'XML_PARSE_ERR',
 
   // Signing errors
   SIGN_ERROR = 'SIGN_ERR',
-  SIGN_VERIFY_ERROR = 'SIGN_VERIFY_ERR',
 
   // QR errors
   QR_GEN_ERROR = 'QR_GEN_ERR',
@@ -31,8 +28,6 @@ export enum ZatcaErrorCode {
   // Hash chain errors
   HASH_CHAIN_ERROR = 'HASH_CHAIN_ERR',
 
-  // Unknown
-  UNKNOWN_ERROR = 'UNKNOWN_ERR',
 }
 
 export class ZatcaError extends Error {
@@ -46,12 +41,4 @@ export class ZatcaError extends Error {
     this.details = details;
   }
 
-  toJSON() {
-    return {
-      name: this.name,
-      code: this.code,
-      message: this.message,
-      details: this.details,
-    };
-  }
 }

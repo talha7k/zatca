@@ -56,36 +56,6 @@ export class StatusApi extends ZatcaHttpClient {
     return this.parseStatusResult(data);
   }
 
-  /**
-   * Check status by request ID (from submission response)
-   *
-   * GET /invoices/status/request/{requestId}
-   */
-  async checkByRequestId(
-    credentials: ZatcaCredentials,
-    requestId: string,
-  ): Promise<InvoiceStatusResult> {
-    const response = await this.request(
-      'GET',
-      `/invoices/status/request/${requestId}`,
-      undefined,
-      credentials,
-    );
-
-    let data: Record<string, unknown>;
-    try {
-      data = JSON.parse(response.body);
-    } catch {
-      throw new ZatcaError(
-        `Failed to parse status response for request ${requestId} (HTTP ${response.status}): ${response.body.substring(0, 200)}`,
-        ZatcaErrorCode.API_ERROR,
-        { httpStatus: response.status, body: response.body },
-      );
-    }
-
-    return this.parseStatusResult(data);
-  }
-
   private parseStatusResult(data: Record<string, unknown>): InvoiceStatusResult {
     const validationResults = data.validationResults as
       | {

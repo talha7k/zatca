@@ -92,22 +92,9 @@ export class ZatcaApiClient extends ZatcaHttpClient {
     return this.clearance.clearInvoice(credentials, request);
   }
 
-  async submitForClearanceOrThrow(
-    credentials: ZatcaCredentials,
-    request: SubmitInvoiceRequest,
-  ): Promise<ZatcaSubmitResult> {
-    const result = await this.submitForClearance(credentials, request);
-    assertNoZatcaAlerts(result, 'ZATCA clearance');
-    return result;
-  }
-
   // ---- Status ----
 
   async checkInvoiceStatus(credentials: ZatcaCredentials, uuid: string) {
     return this.status.checkStatus(credentials, uuid);
-  }
-
-  async checkByRequestId(credentials: ZatcaCredentials, requestId: string) {
-    return this.status.checkByRequestId(credentials, requestId);
   }
 }

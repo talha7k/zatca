@@ -17,7 +17,7 @@ type ValidationResults = {
   warningMessages?: ValidationMessage[];
 };
 
-export function normalizeApiError(message: ValidationMessage): ZatcaApiError {
+function normalizeApiError(message: ValidationMessage): ZatcaApiError {
   return {
     code: message.code || 'ZATCA_VALIDATION_ERROR',
     category: message.category || 'ZATCA',
@@ -25,7 +25,7 @@ export function normalizeApiError(message: ValidationMessage): ZatcaApiError {
   };
 }
 
-export function normalizeApiWarning(message: ValidationMessage): ZatcaApiWarning {
+function normalizeApiWarning(message: ValidationMessage): ZatcaApiWarning {
   return {
     code: message.code || 'ZATCA_WARNING',
     category: message.category || 'ZATCA',

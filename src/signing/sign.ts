@@ -412,7 +412,7 @@ export function computeInvoiceHash(xml: string): string {
  * Compute SHA-256 hash of invoice XML as base64-encoded raw bytes.
  * This is the format ZATCA expects for API body `invoiceHash` and PIH.
  */
-export function computeInvoiceHashBase64(xml: string): string {
+function computeInvoiceHashBase64(xml: string): string {
   return canonicalizeForHash(xml).hashBase64;
 }
 
