@@ -26,7 +26,7 @@ import { generateCreditNoteXml, generateInvoiceXml } from '../xml/index.js';
 import { signInvoice } from '../signing/index.js';
 import { generatePhase2TLV } from '@talha7k/zatca-qr';
 import { ZatcaApiClient } from '../api/index.js';
-import { extractPublicKey } from '../certificate/index.js';
+import { extractRawPublicKey } from '../certificate/index.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -140,7 +140,7 @@ export async function submitDocument(options: SubmitOptions): Promise<SubmitResu
       vatTotal: invoice.taxAmount.toFixed(2),
       invoiceHash,
       signatureValue,
-      publicKey: extractPublicKey(certificatePem),
+      publicKey: extractRawPublicKey(certificatePem),
       certificateSignature,
     });
 
