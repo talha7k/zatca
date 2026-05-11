@@ -7,10 +7,52 @@
 
 import { ZatcaHttpClient } from './client.js';
 import type {
-  ZatcaApiConfig,
   ZatcaCredentials,
   ZatcaCSIDResponse,
 } from '../types.js';
+
+function rejectedCsid(code: string, message: string): ZatcaCSIDResponse {
+  return {
+    binarySecurityToken: '',
+    secret: '',
+    requestId: undefined,
+    status: 'REJECTED',
+    error: {
+      code,
+      category: code.startsWith('HTTP_') ? 'HTTP-Errors' : 'VALIDATION',
+      message,
+    },
+  };
+}
+
+function requestIdFrom(data: any): string | undefined {
+  if (data.requestID != null) return String(data.requestID);
+  if (data.requestId != null) return String(data.requestId);
+  return undefined;
+}
+
+function parseCsidResponse(response: { status: number; body: string }): ZatcaCSIDResponse {
+  let data: any;
+  try {
+    data = JSON.parse(response.body);
+  } catch {
+    return rejectedCsid(`HTTP_${response.status}`, response.body);
+  }
+
+  return {
+    binarySecurityToken: data.binarySecurityToken || '',
+    secret: data.secret || '',
+    requestId: requestIdFrom(data),
+    status: response.status >= 200 && response.status < 300 ? 'ACCEPTED' : 'REJECTED',
+    error: data.errors?.[0]
+      ? {
+          code: data.errors[0].code || '',
+          category: data.errors[0].category || '',
+          message: data.errors[0].message || '',
+        }
+      : undefined,
+  };
+}
 
 export class ComplianceApi extends ZatcaHttpClient {
   /**
@@ -24,74 +66,21 @@ export class ComplianceApi extends ZatcaHttpClient {
    */
   async requestCSID(csr: string, otp?: string): Promise<ZatcaCSIDResponse> {
     if (!csr) {
-      return {
-        binarySecurityToken: '',
-        secret: '',
-        requestId: undefined,
-        status: 'REJECTED',
-        error: {
-          code: 'MISSING_CSR',
-          category: 'VALIDATION',
-          message: 'CSR is required to request a Compliance CSID',
-        },
-      };
+      return rejectedCsid('MISSING_CSR', 'CSR is required to request a Compliance CSID');
     }
 
     let csrBase64: string;
     try {
       csrBase64 = btoa(csr);
     } catch {
-      return {
-        binarySecurityToken: '',
-        secret: '',
-        requestId: undefined,
-        status: 'REJECTED',
-        error: {
-          code: 'CSR_ENCODING_ERROR',
-          category: 'VALIDATION',
-          message: 'Failed to Base64-encode the CSR. Ensure it is a valid PEM string.',
-        },
-      };
+      return rejectedCsid(
+        'CSR_ENCODING_ERROR',
+        'Failed to Base64-encode the CSR. Ensure it is a valid PEM string.',
+      );
     }
 
     const response = await this.request('POST', '/compliance', { csr: csrBase64 }, undefined, undefined, otp);
-
-    let data: any;
-    try {
-      data = JSON.parse(response.body);
-    } catch {
-      // ZATCA returned non-JSON (e.g., HTML error page or plain text like "Invalid Request")
-      return {
-        binarySecurityToken: '',
-        secret: '',
-        requestId: undefined,
-        status: 'REJECTED',
-        error: {
-          code: `HTTP_${response.status}`,
-          category: 'HTTP-Errors',
-          message: response.body,
-        },
-      };
-    }
-
-    return {
-      binarySecurityToken: data.binarySecurityToken || '',
-      secret: data.secret || '',
-      requestId:
-        data.requestID != null
-          ? String(data.requestID)
-          : data.requestId != null
-            ? String(data.requestId)
-            : undefined,
-      status: response.status >= 200 && response.status < 300 ? 'ACCEPTED' : 'REJECTED',
-      error: data.errors?.[0]
-        ? {
-            code: data.errors[0].code || '',
-            category: data.errors[0].category || '',
-            message: data.errors[0].message || '',
-          }
-        : undefined,
-    };
+    return parseCsidResponse(response);
   }
 
   /**
@@ -152,35 +141,6 @@ export class ComplianceApi extends ZatcaHttpClient {
       credentials,
     );
 
-    let data: any;
-    try {
-      data = JSON.parse(response.body);
-    } catch {
-      return {
-        binarySecurityToken: '',
-        secret: '',
-        requestId: undefined,
-        status: 'REJECTED',
-        error: {
-          code: `HTTP_${response.status}`,
-          category: 'HTTP-Errors',
-          message: response.body,
-        },
-      };
-    }
-
-    return {
-      binarySecurityToken: data.binarySecurityToken || '',
-      secret: data.secret || '',
-      requestId: data.requestID || data.requestId,
-      status: response.status >= 200 && response.status < 300 ? 'ACCEPTED' : 'REJECTED',
-      error: data.errors?.[0]
-        ? {
-            code: data.errors[0].code || '',
-            category: data.errors[0].category || '',
-            message: data.errors[0].message || '',
-          }
-        : undefined,
-    };
+    return parseCsidResponse(response);
   }
 }

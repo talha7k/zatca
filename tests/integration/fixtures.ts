@@ -91,6 +91,46 @@ export function createTestInvoice(overrides?: Partial<InvoiceData>): InvoiceData
   };
 }
 
+export function createDiscountedTestInvoice(overrides?: Partial<InvoiceData>): InvoiceData {
+  return createTestInvoice({
+    lineExtensionAmount: 100,
+    taxExclusiveAmount: 90,
+    taxInclusiveAmount: 103.5,
+    allowanceTotalAmount: 10,
+    allowanceCharges: [
+      {
+        chargeIndicator: false,
+        reason: 'Discount',
+        amount: 10,
+      },
+    ],
+    payableAmount: 103.5,
+    taxAmount: 13.5,
+    taxSubtotals: [
+      {
+        taxableAmount: 90,
+        taxAmount: 13.5,
+        percent: 15,
+        taxCategoryId: 'S',
+      },
+    ],
+    invoiceLines: [
+      {
+        id: 1,
+        quantity: 1,
+        unitCode: 'PCE',
+        lineExtensionAmount: 100,
+        taxAmount: 13.5,
+        itemName: 'Discounted Product',
+        taxCategoryId: 'S',
+        taxPercent: 15,
+        priceAmount: 100,
+      },
+    ],
+    ...overrides,
+  });
+}
+
 export function createTestCreditNote(overrides?: Partial<CreditNoteData>): CreditNoteData {
   return {
     ...createTestInvoice({

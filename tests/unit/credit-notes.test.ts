@@ -9,6 +9,7 @@ import {
   ZatcaApiClient,
   ZatcaError,
 } from '../../src/index.js';
+import type { ZatcaDocumentData } from '../../src/types.js';
 import { createTestCreditNote, createTestInvoice } from '../integration/fixtures.js';
 
 const parser = new XMLParser({
@@ -38,6 +39,33 @@ const originalFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = originalFetch;
 });
+
+function mockZatcaResponse(body: unknown): Array<{ url: string; body: string }> {
+  const calls: Array<{ url: string; body: string }> = [];
+  globalThis.fetch = (async (url, init) => {
+    calls.push({ url: String(url), body: String(init?.body) });
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as typeof fetch;
+  return calls;
+}
+
+function submitTestDocument(invoice: ZatcaDocumentData) {
+  return submitDocument({
+    invoice,
+    privateKeyPem: TEST_PRIVATE_KEY,
+    certificatePem: TEST_CERT,
+    certificateSignature: extractCertificateSignature(TEST_CERT),
+    credentials: { binarySecurityToken: 'token', secret: 'secret' },
+    apiConfig: {
+      environment: 'sandbox',
+      sandboxUrl: 'https://sandbox.example.test',
+      timeout: 1000,
+    },
+  });
+}
 
 describe('ZATCA credit notes', () => {
   test('generates refund credit note XML with ZATCA credit-note code and reason', () => {
@@ -104,36 +132,20 @@ describe('ZATCA credit notes', () => {
   });
 
   test('submits simplified credit notes to reporting endpoint', async () => {
-    const calls: Array<{ url: string; body: string }> = [];
-    globalThis.fetch = (async (url, init) => {
-      calls.push({ url: String(url), body: String(init?.body) });
-      return new Response(
-        JSON.stringify({
-          reportingStatus: 'REPORTED',
-          uuid: 'reported-credit-note',
-          invoiceHash: 'hash',
-          validationResults: { errorMessages: [], warningMessages: [] },
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
-    }) as typeof fetch;
+    const calls = mockZatcaResponse({
+      reportingStatus: 'REPORTED',
+      uuid: 'reported-credit-note',
+      invoiceHash: 'hash',
+      validationResults: { errorMessages: [], warningMessages: [] },
+    });
 
-    const result = await submitDocument({
-      invoice: createTestCreditNote({
+    const result = await submitTestDocument(
+      createTestCreditNote({
         invoiceTypeCode: '381',
         invoiceTypeCodeName: '0200000',
         profileId: 'reporting:1.0',
       }),
-      privateKeyPem: TEST_PRIVATE_KEY,
-      certificatePem: TEST_CERT,
-      certificateSignature: extractCertificateSignature(TEST_CERT),
-      credentials: { binarySecurityToken: 'token', secret: 'secret' },
-      apiConfig: {
-        environment: 'sandbox',
-        sandboxUrl: 'https://sandbox.example.test',
-        timeout: 1000,
-      },
-    });
+    );
 
     expect(result.success).toBe(true);
     expect(calls).toHaveLength(1);
@@ -168,25 +180,18 @@ describe('ZATCA credit notes', () => {
   });
 
   test('submits standard tax invoices to clearance endpoint while keeping code 388', async () => {
-    const calls: Array<{ url: string; body: string }> = [];
-    globalThis.fetch = (async (url, init) => {
-      calls.push({ url: String(url), body: String(init?.body) });
-      return new Response(
-        JSON.stringify({
-          acceptedInvoices: [
-            {
-              uuid: 'cleared-standard-invoice',
-              invoiceHash: 'hash',
-              clearanceStatus: 'CLEARED',
-            },
-          ],
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
-    }) as typeof fetch;
+    const calls = mockZatcaResponse({
+      acceptedInvoices: [
+        {
+          uuid: 'cleared-standard-invoice',
+          invoiceHash: 'hash',
+          clearanceStatus: 'CLEARED',
+        },
+      ],
+    });
 
-    const result = await submitDocument({
-      invoice: createTestInvoice({
+    const result = await submitTestDocument(
+      createTestInvoice({
         invoiceTypeCode: '388',
         invoiceTypeCodeName: '0100000',
         profileId: 'clearance:1.0',
@@ -195,16 +200,7 @@ describe('ZATCA credit notes', () => {
           vatNumber: '300000000000003',
         },
       }),
-      privateKeyPem: TEST_PRIVATE_KEY,
-      certificatePem: TEST_CERT,
-      certificateSignature: extractCertificateSignature(TEST_CERT),
-      credentials: { binarySecurityToken: 'token', secret: 'secret' },
-      apiConfig: {
-        environment: 'sandbox',
-        sandboxUrl: 'https://sandbox.example.test',
-        timeout: 1000,
-      },
-    });
+    );
 
     expect(result.success).toBe(true);
     expect(calls).toHaveLength(1);

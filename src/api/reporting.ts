@@ -11,9 +11,9 @@ import type {
   ZatcaCredentials,
   SubmitInvoiceRequest,
   ZatcaSubmitResult,
-  ZatcaApiWarning,
 } from '../types.js';
 import { extractValidationDiagnostics } from './diagnostics.js';
+import { parseInvoiceListResponse, parseSubmissionResponse } from './submission-response.js';
 
 export class ReportingApi extends ZatcaHttpClient {
   private readonly retryMax: number;
@@ -91,9 +91,10 @@ export class ReportingApi extends ZatcaHttpClient {
   }
 
   private parseResponse(response: { status: number; body: string }): ZatcaSubmitResult {
-    try {
-      const data = JSON.parse(response.body);
-
+    return parseSubmissionResponse(
+      response,
+      { parseErrorMessage: 'Failed to parse ZATCA response' },
+      (data) => {
       // Reporting API format
       const reportingStatus = data.reportingStatus;
       if (reportingStatus) {
@@ -118,82 +119,8 @@ export class ReportingApi extends ZatcaHttpClient {
       }
 
       // Clearance API format (in case endpoint returns this shape)
-      const accepted = data.acceptedInvoices?.[0];
-      const rejected = data.rejectededInvoices?.[0] || data.rejectedInvoices?.[0];
-      const invoice = accepted || rejected;
-
-      if (invoice) {
-        const diagnostics = extractValidationDiagnostics(data.validationResults);
-        const invoiceWarnings = (invoice.warnings || []).map(
-          (w: { code?: string; category?: string; message?: string }) => ({
-            code: w.code || '',
-            category: w.category || '',
-            message: w.message || '',
-          }),
-        );
-        const invoiceAlerts = invoiceWarnings.map((warning: ZatcaApiWarning) => ({
-          severity: 'warning' as const,
-          code: warning.code,
-          category: warning.category,
-          message: warning.message,
-        }));
-
-        return {
-          success: !!accepted,
-          httpStatus: response.status,
-          error: invoice.error
-            ? {
-                code: invoice.error.code || '',
-                category: invoice.error.category || '',
-                message: invoice.error.message || '',
-              }
-            : diagnostics.error,
-          alerts: [...diagnostics.alerts, ...invoiceAlerts],
-          response: {
-            uuid: invoice.uuid || '',
-            invoiceHash: invoice.invoiceHash || '',
-            clearedInvoice: invoice.clearedInvoice,
-            clearanceDateTime: invoice.clearanceDateTime,
-            reportingStatus: invoice.reportingStatus,
-            status: !!accepted ? 'ACCEPTED' : 'REJECTED',
-            error: invoice.error
-              ? {
-                  code: invoice.error.code || '',
-                  category: invoice.error.category || '',
-                  message: invoice.error.message || '',
-                }
-              : diagnostics.error,
-            warnings: invoiceWarnings,
-          },
-          rawBody: response.body,
-        };
-      }
-
-      // Fallback — treat HTTP status as success indicator
-      return {
-        success: response.status >= 200 && response.status < 300,
-        httpStatus: response.status,
-        rawBody: response.body,
-      };
-    } catch (parseError) {
-      return {
-        success: false,
-        httpStatus: response.status,
-        error: {
-          code: 'PARSE_ERROR',
-          category: 'CLIENT',
-          message: `Failed to parse ZATCA response: ${parseError}`,
-        },
-        alerts: [
-          {
-            severity: 'error',
-            code: 'PARSE_ERROR',
-            category: 'CLIENT',
-            message: `Failed to parse ZATCA response: ${parseError}`,
-          },
-        ],
-        rawBody: response.body,
-      };
-    }
+      return parseInvoiceListResponse(response, data, { includeReportingStatus: true });
+      },
+    );
   }
 }

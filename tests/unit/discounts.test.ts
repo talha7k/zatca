@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { XMLParser } from 'fast-xml-parser';
 import { generateInvoiceXml } from '../../src/index.js';
-import { createTestInvoice } from '../integration/fixtures.js';
+import { createDiscountedTestInvoice } from '../integration/fixtures.js';
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -14,42 +14,7 @@ function parseInvoice(xml: string): any {
 
 describe('invoice discount allowance charges', () => {
   test('emits document-level allowance charge for invoice discounts', () => {
-    const invoice = createTestInvoice({
-      lineExtensionAmount: 100,
-      taxExclusiveAmount: 90,
-      taxInclusiveAmount: 103.5,
-      allowanceTotalAmount: 10,
-      allowanceCharges: [
-        {
-          chargeIndicator: false,
-          reason: 'Discount',
-          amount: 10,
-        },
-      ],
-      payableAmount: 103.5,
-      taxAmount: 13.5,
-      taxSubtotals: [
-        {
-          taxableAmount: 90,
-          taxAmount: 13.5,
-          percent: 15,
-          taxCategoryId: 'S',
-        },
-      ],
-      invoiceLines: [
-        {
-          id: 1,
-          quantity: 1,
-          unitCode: 'PCE',
-          lineExtensionAmount: 100,
-          taxAmount: 13.5,
-          itemName: 'Product',
-          taxCategoryId: 'S',
-          taxPercent: 15,
-          priceAmount: 100,
-        },
-      ],
-    });
+    const invoice = createDiscountedTestInvoice();
 
     const xml = generateInvoiceXml(invoice);
     const parsed = parseInvoice(xml);
@@ -66,21 +31,14 @@ describe('invoice discount allowance charges', () => {
   });
 
   test('emits line-level allowance charge for allocated header discounts', () => {
-    const invoice = createTestInvoice({
+    const invoice = createDiscountedTestInvoice({
       lineExtensionAmount: 90,
       taxExclusiveAmount: 90,
       taxInclusiveAmount: 103.5,
       allowanceTotalAmount: 10,
+      allowanceCharges: undefined,
       payableAmount: 103.5,
       taxAmount: 13.5,
-      taxSubtotals: [
-        {
-          taxableAmount: 90,
-          taxAmount: 13.5,
-          percent: 15,
-          taxCategoryId: 'S',
-        },
-      ],
       invoiceLines: [
         {
           id: 1,

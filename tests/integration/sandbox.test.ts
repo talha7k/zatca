@@ -20,11 +20,16 @@ import {
   ZatcaApiClient,
 } from '../../src/index.js';
 import type {
+  InvoiceData,
   ZatcaCredentials,
   ZatcaCSIDResponse,
 } from '../../src/types.js';
 import type { QRInvoiceData } from '../../src/signing/sign.js';
-import { TEST_CSR_PARAMS, createTestCreditNote, createTestInvoice } from './fixtures.js';
+import {
+  TEST_CSR_PARAMS,
+  createDiscountedTestInvoice,
+  createTestCreditNote,
+} from './fixtures.js';
 
 // Increase timeout for network calls (sandbox can be slow)
 const SANDBOX_TIMEOUT = 60_000;
@@ -103,44 +108,74 @@ function logZatcaAlert(
   console.error(`[ZATCA ALERT] ${operation}`, JSON.stringify(details, null, 2));
 }
 
-function createDiscountedInvoice(overrides = {}) {
-  return createTestInvoice({
-    lineExtensionAmount: 100,
-    taxExclusiveAmount: 90,
-    taxInclusiveAmount: 103.5,
-    allowanceTotalAmount: 10,
-    allowanceCharges: [
-      {
-        chargeIndicator: false,
-        reason: 'Discount',
-        amount: 10,
-      },
-    ],
-    payableAmount: 103.5,
-    taxAmount: 13.5,
-    taxSubtotals: [
-      {
-        taxableAmount: 90,
-        taxAmount: 13.5,
-        percent: 15,
-        taxCategoryId: 'S',
-      },
-    ],
-    invoiceLines: [
-      {
-        id: 1,
-        quantity: 1,
-        unitCode: 'PCE',
-        lineExtensionAmount: 100,
-        taxAmount: 13.5,
-        itemName: 'Discounted Product',
-        taxCategoryId: 'S',
-        taxPercent: 15,
-        priceAmount: 100,
-      },
-    ],
-    ...overrides,
-  });
+function expectDiscountedInvoiceXml(xml: string): void {
+  expect(xml).toContain('<cac:AllowanceCharge>');
+  expect(xml).toContain('<cbc:AllowanceTotalAmount currencyID="SAR">10.00</cbc:AllowanceTotalAmount>');
+  expect(xml).toContain('<cbc:TaxableAmount currencyID="SAR">90.00</cbc:TaxableAmount>');
+  expect(xml).toContain('<cbc:PayableAmount currencyID="SAR">103.50</cbc:PayableAmount>');
+}
+
+function createQrData(invoiceData: InvoiceData, binarySecurityToken: string) {
+  const certPem = asCertificatePem(binarySecurityToken);
+  const certSignature = extractCertificateSignatureOrThrow(certPem);
+  const qrData: QRInvoiceData = {
+    sellerName: invoiceData.supplier.nameAr,
+    vatNumber: invoiceData.supplier.vatNumber,
+    timestamp: `${invoiceData.issueDate}T${invoiceData.issueTime}`,
+    totalWithVat: invoiceData.taxInclusiveAmount.toFixed(2),
+    vatTotal: invoiceData.taxAmount.toFixed(2),
+    certificateSignature: certSignature,
+  };
+
+  return { certPem, qrData };
+}
+
+function logCertificateDiagnostics(label: string, b64Der: string, certPem: string): void {
+  console.log(`\n🔍 [${label} DEBUG] Certificate & key diagnostics:`);
+  console.log(`   b64Der length: ${b64Der.length}`);
+  console.log(`   b64Der first 50: "${b64Der.substring(0, 50)}"`);
+  console.log(`   b64Der last 50:  "${b64Der.substring(b64Der.length - 50)}"`);
+
+  const certPemLines = certPem.split('\n');
+  console.log(`   certPem total lines: ${certPemLines.length}`);
+  console.log('   certPem first 5 lines:');
+  for (const line of certPemLines.slice(0, 5)) {
+    console.log(`     ${line}`);
+  }
+  console.log('   certPem last 3 lines:');
+  for (const line of certPemLines.slice(-3)) {
+    console.log(`     ${line}`);
+  }
+
+  try {
+    const x509 = new crypto.X509Certificate(certPem);
+    console.log('   ✅ X509Certificate parsed successfully');
+    console.log(`      subject:    ${x509.subject}`);
+    console.log(`      issuer:     ${x509.issuer}`);
+    console.log(`      validFrom:  ${x509.validFrom}`);
+    console.log(`      validTo:    ${x509.validTo}`);
+  } catch (certErr) {
+    console.log(`   ❌ X509Certificate parse failed: ${(certErr as Error).message}`);
+  }
+
+  const keyLines = privateKey.split('\n');
+  console.log(`   privateKey total lines: ${keyLines.length}`);
+  console.log('   privateKey first 2 lines:');
+  for (const line of keyLines.slice(0, 2)) {
+    console.log(`     ${line}`);
+  }
+  console.log(`   privateKey last line: ${keyLines[keyLines.length - 1]}`);
+
+  try {
+    const pubKey = crypto.createPublicKey(privateKey);
+    console.log('   ✅ createPublicKey succeeded');
+    console.log(`      type:             ${pubKey.type}`);
+    console.log(`      asymmetricKeyType: ${pubKey.asymmetricKeyType}`);
+  } catch (keyErr) {
+    console.log(`   ❌ createPublicKey failed: ${(keyErr as Error).message}`);
+  }
+
+  console.log(`🔍 [${label} DEBUG] End diagnostics\n`);
 }
 
 describe('ZATCA Sandbox Integration', () => {
@@ -208,97 +243,18 @@ describe('ZATCA Sandbox Integration', () => {
   // STEP 3: Generate + Sign Invoice for Compliance
   // ============================================
   test('Step 3: Generate and sign discounted simplified invoice', () => {
-    const invoiceData = createDiscountedInvoice();
+    const invoiceData = createDiscountedTestInvoice();
 
     // Generate XML
     const xml = generateInvoiceXml(invoiceData);
     expect(xml).toContain('Invoice');
     expect(xml).toContain('UBLVersionID');
     expect(xml).toContain(invoiceData.invoiceNumber);
-    expect(xml).toContain('<cac:AllowanceCharge>');
-    expect(xml).toContain('<cbc:AllowanceTotalAmount currencyID="SAR">10.00</cbc:AllowanceTotalAmount>');
-    expect(xml).toContain('<cbc:TaxableAmount currencyID="SAR">90.00</cbc:TaxableAmount>');
-    expect(xml).toContain('<cbc:PayableAmount currencyID="SAR">103.50</cbc:PayableAmount>');
+    expectDiscountedInvoiceXml(xml);
 
-    // binarySecurityToken is base64-encoded DER certificate.
-    // Wrap with PEM headers to create proper PEM string.
     const b64Der = complianceCSID.binarySecurityToken;
-    const certPem = asCertificatePem(b64Der);
-
-    // Extract certificate signature for QR Tag 9.
-    // Tag 9 = ZATCA CA signature on the certificate (the signatureValue from the DER).
-    // Certificate ASN.1: SEQUENCE { tbsCertificate, signatureAlgorithm, signatureValue }
-    // We extract the signatureValue (third element).
-    const certSignature = extractCertificateSignatureOrThrow(certPem);
-
-    // Build timestamp for QR (must match XML IssueDate + IssueTime exactly)
-    // ZATCA expects format: YYYY-MM-DDTHH:MM:SS (no Z suffix, no timezone)
-    const qrTimestamp = `${invoiceData.issueDate}T${invoiceData.issueTime}`;
-
-    // QR data (Tags 1-5, 9) — Tags 6-8 are computed automatically by signInvoice.
-    // Amounts must match XML format (2 decimal places).
-    const qrData: QRInvoiceData = {
-      sellerName: invoiceData.supplier.nameAr,
-      vatNumber: invoiceData.supplier.vatNumber,
-      timestamp: qrTimestamp,
-      totalWithVat: invoiceData.taxInclusiveAmount.toFixed(2),
-      vatTotal: invoiceData.taxAmount.toFixed(2),
-      certificateSignature: certSignature,
-    };
-
-    // --- DEBUG: Diagnose ASN.1 DECODE_ERROR before signing ---
-    console.log('\n🔍 [Step 3 DEBUG] Certificate & key diagnostics:');
-
-    // 1. Raw b64Der length and first/last 50 chars
-    console.log(`   b64Der length: ${b64Der.length}`);
-    console.log(`   b64Der first 50: "${b64Der.substring(0, 50)}"`);
-    console.log(`   b64Der last 50:  "${b64Der.substring(b64Der.length - 50)}"`);
-
-    // 2. certPem first 5 lines and last 3 lines
-    const certPemLines = certPem.split('\n');
-    console.log(`   certPem total lines: ${certPemLines.length}`);
-    console.log('   certPem first 5 lines:');
-    for (const line of certPemLines.slice(0, 5)) {
-      console.log(`     ${line}`);
-    }
-    console.log('   certPem last 3 lines:');
-    for (const line of certPemLines.slice(-3)) {
-      console.log(`     ${line}`);
-    }
-
-    // 3. Try parsing cert with X509Certificate
-    try {
-      const x509 = new crypto.X509Certificate(certPem);
-      console.log('   ✅ X509Certificate parsed successfully');
-      console.log(`      subject:    ${x509.subject}`);
-      console.log(`      issuer:     ${x509.issuer}`);
-      console.log(`      validFrom:  ${x509.validFrom}`);
-      console.log(`      validTo:    ${x509.validTo}`);
-    } catch (certErr) {
-      console.log(`   ❌ X509Certificate parse failed: ${(certErr as Error).message}`);
-    }
-
-    // 4. Private key first 2 lines and last line
-    const keyLines = privateKey.split('\n');
-    console.log(`   privateKey total lines: ${keyLines.length}`);
-    console.log('   privateKey first 2 lines:');
-    for (const line of keyLines.slice(0, 2)) {
-      console.log(`     ${line}`);
-    }
-    console.log(`   privateKey last line: ${keyLines[keyLines.length - 1]}`);
-
-    // 5. Try createPublicKey on private key
-    try {
-      const pubKey = crypto.createPublicKey(privateKey);
-      console.log('   ✅ createPublicKey succeeded');
-      console.log(`      type:             ${pubKey.type}`);
-      console.log(`      asymmetricKeyType: ${pubKey.asymmetricKeyType}`);
-    } catch (keyErr) {
-      console.log(`   ❌ createPublicKey failed: ${(keyErr as Error).message}`);
-    }
-
-    console.log('🔍 [Step 3 DEBUG] End diagnostics\n');
-    // --- END DEBUG ---
+    const { certPem, qrData } = createQrData(invoiceData, b64Der);
+    logCertificateDiagnostics('Step 3', b64Der, certPem);
 
     let signResult: ReturnType<typeof signInvoice>;
     try {
@@ -457,7 +413,7 @@ describe('ZATCA Sandbox Integration', () => {
   // ============================================
   test('Step 6: Report simplified invoice (POST /invoices/reporting/single)', async () => {
     // Generate a NEW invoice for reporting (different from compliance)
-    const invoiceData = createDiscountedInvoice({
+    const invoiceData = createDiscountedTestInvoice({
       invoiceNumber: 'SME00002',
       invoiceCounter: 2,
       supplier: {
@@ -477,81 +433,11 @@ describe('ZATCA Sandbox Integration', () => {
     });
 
     const xml = generateInvoiceXml(invoiceData);
-    expect(xml).toContain('<cac:AllowanceCharge>');
-    expect(xml).toContain('<cbc:AllowanceTotalAmount currencyID="SAR">10.00</cbc:AllowanceTotalAmount>');
-    expect(xml).toContain('<cbc:TaxableAmount currencyID="SAR">90.00</cbc:TaxableAmount>');
-    expect(xml).toContain('<cbc:PayableAmount currencyID="SAR">103.50</cbc:PayableAmount>');
+    expectDiscountedInvoiceXml(xml);
 
-    // Decode production certificate
     const b64Der = productionCSID.binarySecurityToken;
-    const certPem = asCertificatePem(b64Der);
-
-    // Extract certificate signature for QR Tag 9
-    const certSignature = extractCertificateSignatureOrThrow(certPem);
-
-    const qrTimestamp = `${invoiceData.issueDate}T${invoiceData.issueTime}`;
-    const qrData: QRInvoiceData = {
-      sellerName: invoiceData.supplier.nameAr,
-      vatNumber: invoiceData.supplier.vatNumber,
-      timestamp: qrTimestamp,
-      totalWithVat: invoiceData.taxInclusiveAmount.toFixed(2),
-      vatTotal: invoiceData.taxAmount.toFixed(2),
-      certificateSignature: certSignature,
-    };
-
-    // --- DEBUG: Diagnose ASN.1 DECODE_ERROR before signing ---
-    console.log('\n🔍 [Step 6 DEBUG] Certificate & key diagnostics:');
-
-    // 1. Raw b64Der length and first/last 50 chars
-    console.log(`   b64Der length: ${b64Der.length}`);
-    console.log(`   b64Der first 50: "${b64Der.substring(0, 50)}"`);
-    console.log(`   b64Der last 50:  "${b64Der.substring(b64Der.length - 50)}"`);
-
-    // 2. certPem first 5 lines and last 3 lines
-    const certPemLines = certPem.split('\n');
-    console.log(`   certPem total lines: ${certPemLines.length}`);
-    console.log('   certPem first 5 lines:');
-    for (const line of certPemLines.slice(0, 5)) {
-      console.log(`     ${line}`);
-    }
-    console.log('   certPem last 3 lines:');
-    for (const line of certPemLines.slice(-3)) {
-      console.log(`     ${line}`);
-    }
-
-    // 3. Try parsing cert with X509Certificate
-    try {
-      const x509 = new crypto.X509Certificate(certPem);
-      console.log('   ✅ X509Certificate parsed successfully');
-      console.log(`      subject:    ${x509.subject}`);
-      console.log(`      issuer:     ${x509.issuer}`);
-      console.log(`      validFrom:  ${x509.validFrom}`);
-      console.log(`      validTo:    ${x509.validTo}`);
-    } catch (certErr) {
-      console.log(`   ❌ X509Certificate parse failed: ${(certErr as Error).message}`);
-    }
-
-    // 4. Private key first 2 lines and last line
-    const keyLines = privateKey.split('\n');
-    console.log(`   privateKey total lines: ${keyLines.length}`);
-    console.log('   privateKey first 2 lines:');
-    for (const line of keyLines.slice(0, 2)) {
-      console.log(`     ${line}`);
-    }
-    console.log(`   privateKey last line: ${keyLines[keyLines.length - 1]}`);
-
-    // 5. Try createPublicKey on private key
-    try {
-      const pubKey = crypto.createPublicKey(privateKey);
-      console.log('   ✅ createPublicKey succeeded');
-      console.log(`      type:             ${pubKey.type}`);
-      console.log(`      asymmetricKeyType: ${pubKey.asymmetricKeyType}`);
-    } catch (keyErr) {
-      console.log(`   ❌ createPublicKey failed: ${(keyErr as Error).message}`);
-    }
-
-    console.log('🔍 [Step 6 DEBUG] End diagnostics\n');
-    // --- END DEBUG ---
+    const { certPem, qrData } = createQrData(invoiceData, b64Der);
+    logCertificateDiagnostics('Step 6', b64Der, certPem);
 
     const signResult = signInvoice({
       xml,

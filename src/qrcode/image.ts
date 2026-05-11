@@ -15,6 +15,8 @@ import { ZatcaError, ZatcaErrorCode } from '../errors.js';
 
 export type { QRImageOptions };
 
+type QRPhase = 'Phase 1' | 'Phase 2';
+
 /**
  * Dynamically import qrcode — throws a helpful error if not installed.
  */
@@ -29,6 +31,30 @@ async function loadQRCode(): Promise<typeof import('qrcode')> {
   }
 }
 
+async function generateQRImage(
+  phase: QRPhase,
+  base64TLV: string,
+  options?: QRImageOptions,
+): Promise<string> {
+  try {
+    const QRCode = await loadQRCode();
+
+    return QRCode.toDataURL(base64TLV, {
+      width: options?.width ?? 200,
+      margin: options?.margin ?? 1,
+      errorCorrectionLevel: options?.errorCorrectionLevel ?? 'M',
+      color: { dark: '#000000', light: '#FFFFFF' },
+    });
+  } catch (error) {
+    if (error instanceof ZatcaError) throw error;
+    throw new ZatcaError(
+      `Failed to generate ${phase} QR image: ${(error as Error).message}`,
+      ZatcaErrorCode.QR_GEN_ERROR,
+      error,
+    );
+  }
+}
+
 /**
  * Generate a Phase 2 QR code image as a data URL (base64 PNG).
  *
@@ -38,24 +64,7 @@ export async function generatePhase2QRImage(
   data: Phase2QRData,
   options?: QRImageOptions,
 ): Promise<string> {
-  try {
-    const base64TLV = generateQRCodeData(data);
-    const QRCode = await loadQRCode();
-
-    return QRCode.toDataURL(base64TLV, {
-      width: options?.width ?? 200,
-      margin: options?.margin ?? 1,
-      errorCorrectionLevel: options?.errorCorrectionLevel ?? 'M',
-      color: { dark: '#000000', light: '#FFFFFF' },
-    });
-  } catch (error) {
-    if (error instanceof ZatcaError) throw error;
-    throw new ZatcaError(
-      `Failed to generate Phase 2 QR image: ${(error as Error).message}`,
-      ZatcaErrorCode.QR_GEN_ERROR,
-      error,
-    );
-  }
+  return generateQRImage('Phase 2', generateQRCodeData(data), options);
 }
 
 /**
@@ -65,22 +74,5 @@ export async function generatePhase1QRImage(
   data: Phase1QRData,
   options?: QRImageOptions,
 ): Promise<string> {
-  try {
-    const base64TLV = generatePhase1QRCodeData(data);
-    const QRCode = await loadQRCode();
-
-    return QRCode.toDataURL(base64TLV, {
-      width: options?.width ?? 200,
-      margin: options?.margin ?? 1,
-      errorCorrectionLevel: options?.errorCorrectionLevel ?? 'M',
-      color: { dark: '#000000', light: '#FFFFFF' },
-    });
-  } catch (error) {
-    if (error instanceof ZatcaError) throw error;
-    throw new ZatcaError(
-      `Failed to generate Phase 1 QR image: ${(error as Error).message}`,
-      ZatcaErrorCode.QR_GEN_ERROR,
-      error,
-    );
-  }
+  return generateQRImage('Phase 1', generatePhase1QRCodeData(data), options);
 }

@@ -1,4 +1,10 @@
-import type { CustomerInfo, SupplierInfo } from '../types.js';
+import type {
+  CustomerInfo,
+  InvoiceData,
+  InvoiceTypeCode,
+  InvoiceTypeCodeName,
+  SupplierInfo,
+} from '../types.js';
 import { generateCreditNoteXml, generateInvoiceXml } from '../xml/index.js';
 import { signInvoice } from '../signing/sign.js';
 import { extractCertificateSignature } from '../certificate/generate.js';
@@ -225,47 +231,21 @@ export function buildComplianceInvoiceXml(input: BuildComplianceInvoiceXmlInput)
     (input.checkType.startsWith('STANDARD') ? 'COMP-TI-001' : 'COMP-SI-001');
   const originalInvoiceUuid = input.originalInvoiceUuid ?? crypto.randomUUID();
   const originalInvoiceDate = input.originalInvoiceDate ?? issueDate;
+  const baseInvoice = complianceBaseInvoice({
+    input,
+    invoiceNumber,
+    uuid,
+    issueDate,
+    issueTime,
+    invoiceTypeCode,
+    invoiceTypeCodeName,
+    isStandard,
+  });
 
   if (isCredit) {
     const xml = generateCreditNoteXml({
-      invoiceNumber,
-      uuid,
-      issueDate,
-      issueTime,
-      invoiceTypeCode,
-      invoiceTypeCodeName,
-      profileId: isStandard ? 'clearance:1.0' : 'reporting:1.0',
-      currencyCode: input.currencyCode ?? 'SAR',
-      invoiceCounter: input.invoiceCounter,
-      previousInvoiceHash: input.previousInvoiceHash ?? DEFAULT_COMPLIANCE_PREVIOUS_INVOICE_HASH,
-      supplier: normalizeSupplier(input.supplier),
-      customer: isStandard ? input.customer ?? defaultComplianceCustomer() : input.customer,
-      lineExtensionAmount: 100,
-      taxExclusiveAmount: 100,
-      taxInclusiveAmount: 115,
-      payableAmount: 115,
-      taxAmount: 15,
-      taxSubtotals: [
-        {
-          taxableAmount: 100,
-          taxAmount: 15,
-          percent: 15,
-          taxCategoryId: 'S',
-        },
-      ],
-      invoiceLines: [
-        {
-          id: 1,
-          quantity: 1,
-          unitCode: 'C62',
-          lineExtensionAmount: 100,
-          taxAmount: 15,
-          itemName: 'Compliance Credit Item',
-          taxCategoryId: 'S',
-          taxPercent: 15,
-          priceAmount: 100,
-        },
-      ],
+      ...baseInvoice,
+      invoiceLines: [complianceLine('Compliance Credit Item')],
       originalInvoiceNumber,
       originalInvoiceUuid,
       originalInvoiceDate,
@@ -283,47 +263,15 @@ export function buildComplianceInvoiceXml(input: BuildComplianceInvoiceXmlInput)
     patchSignatureReference(
       patchAdditionalDocumentReferences(
         generateInvoiceXml({
-          invoiceNumber,
-          uuid,
-          issueDate,
-          issueTime,
-          invoiceTypeCode,
-          invoiceTypeCodeName,
-          profileId: isStandard ? 'clearance:1.0' : 'reporting:1.0',
-          currencyCode: input.currencyCode ?? 'SAR',
-          invoiceCounter: input.invoiceCounter,
-          previousInvoiceHash: input.previousInvoiceHash ?? DEFAULT_COMPLIANCE_PREVIOUS_INVOICE_HASH,
-          supplier: normalizeSupplier(input.supplier),
-          customer: isStandard ? input.customer ?? defaultComplianceCustomer() : input.customer,
-          lineExtensionAmount: 100,
-          taxExclusiveAmount: 100,
-          taxInclusiveAmount: 115,
-          payableAmount: 115,
-          taxAmount: 15,
-          taxSubtotals: [
-            {
-              taxableAmount: 100,
-              taxAmount: 15,
-              percent: 15,
-              taxCategoryId: 'S',
-            },
-          ],
+          ...baseInvoice,
           invoiceLines: [
-            {
-              id: 1,
-              quantity: 1,
-              unitCode: 'C62',
-              lineExtensionAmount: 100,
-              taxAmount: 15,
-              itemName: isCredit
+            complianceLine(
+              isCredit
                 ? 'Compliance Credit Item'
                 : isDebit
                   ? 'Compliance Debit Item'
                   : 'Compliance Test Item',
-              taxCategoryId: 'S',
-              taxPercent: 15,
-              priceAmount: 100,
-            },
+            ),
           ],
         }),
       ),
@@ -337,6 +285,62 @@ export function buildComplianceInvoiceXml(input: BuildComplianceInvoiceXmlInput)
     checkType: input.checkType,
     invoiceXml: xml,
     uuid: extractInvoiceUuid(xml),
+  };
+}
+
+function complianceLine(itemName: string): InvoiceData['invoiceLines'][number] {
+  return {
+    id: 1,
+    quantity: 1,
+    unitCode: 'C62',
+    lineExtensionAmount: 100,
+    taxAmount: 15,
+    itemName,
+    taxCategoryId: 'S',
+    taxPercent: 15,
+    priceAmount: 100,
+  };
+}
+
+function complianceBaseInvoice(params: {
+  input: BuildComplianceInvoiceXmlInput;
+  invoiceNumber: string;
+  uuid: string;
+  issueDate: string;
+  issueTime: string;
+  invoiceTypeCode: InvoiceTypeCode;
+  invoiceTypeCodeName: InvoiceTypeCodeName;
+  isStandard: boolean;
+}): InvoiceData {
+  const { input, isStandard } = params;
+
+  return {
+    invoiceNumber: params.invoiceNumber,
+    uuid: params.uuid,
+    issueDate: params.issueDate,
+    issueTime: params.issueTime,
+    invoiceTypeCode: params.invoiceTypeCode,
+    invoiceTypeCodeName: params.invoiceTypeCodeName,
+    profileId: isStandard ? 'clearance:1.0' : 'reporting:1.0',
+    currencyCode: input.currencyCode ?? 'SAR',
+    invoiceCounter: input.invoiceCounter,
+    previousInvoiceHash: input.previousInvoiceHash ?? DEFAULT_COMPLIANCE_PREVIOUS_INVOICE_HASH,
+    supplier: normalizeSupplier(input.supplier),
+    customer: isStandard ? input.customer ?? defaultComplianceCustomer() : input.customer,
+    lineExtensionAmount: 100,
+    taxExclusiveAmount: 100,
+    taxInclusiveAmount: 115,
+    payableAmount: 115,
+    taxAmount: 15,
+    taxSubtotals: [
+      {
+        taxableAmount: 100,
+        taxAmount: 15,
+        percent: 15,
+        taxCategoryId: 'S',
+      },
+    ],
+    invoiceLines: [complianceLine('Compliance Test Item')],
   };
 }
 
