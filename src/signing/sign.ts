@@ -18,6 +18,8 @@ import { ZatcaError, ZatcaErrorCode } from '../errors.js';
 
 import { XmlCanonicalizer } from 'xmldsigjs';
 
+type CanonicalizerNode = Parameters<XmlCanonicalizer['Canonicalize']>[0];
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -232,7 +234,7 @@ function formatSigningTime(date = new Date()): string {
 function canonicalizeXml(xml: string): string {
   const doc = new DOMParser().parseFromString(xml, 'text/xml');
   const canonicalizer = new XmlCanonicalizer(false, false);
-  return canonicalizer.Canonicalize(doc as unknown as Node) as string;
+  return canonicalizer.Canonicalize(doc as unknown as CanonicalizerNode) as string;
 }
 
 function hashForDigestValue(canonicalXml: string): string {
@@ -467,7 +469,7 @@ export function canonicalizeForHash(xml: string, stripQR = true): { canonical: s
   // ZATCA SDK uses Canonical XML 1.1 here; this canonicalizer is the closest
   // compatible implementation available in the runtime dependencies.
   const canonicalizer = new XmlCanonicalizer(false, false);
-  const canonical = canonicalizer.Canonicalize(doc as unknown as Node) as string;
+  const canonical = canonicalizer.Canonicalize(doc as unknown as CanonicalizerNode) as string;
 
   const hashBytes = crypto.createHash('sha256').update(canonical, 'utf8').digest();
   return {
