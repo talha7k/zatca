@@ -108,6 +108,12 @@ function logZatcaAlert(
   console.error(`[ZATCA ALERT] ${operation}`, JSON.stringify(details, null, 2));
 }
 
+function expectNoHashChainComplianceErrors(messages: string[]): void {
+  const text = messages.join(' ').toLowerCase();
+  expect(text).not.toContain('previous invoice hash');
+  expect(text).not.toContain('br-ksa-f-13');
+}
+
 function expectDiscountedInvoiceXml(xml: string): void {
   expect(xml).toContain('<cac:AllowanceCharge>');
   expect(xml).toContain('<cbc:AllowanceTotalAmount currencyID="SAR">10.00</cbc:AllowanceTotalAmount>');
@@ -321,8 +327,7 @@ describe('ZATCA Sandbox Integration', () => {
     expect(result.valid).toBe(true);
     expect(result.messages.join(' ').toLowerCase()).not.toContain('discount');
     expect(result.messages.join(' ').toLowerCase()).not.toContain('allowance');
-    expect(result.messages.join(' ').toLowerCase()).not.toContain('previous invoice hash');
-    expect(result.messages.join(' ').toLowerCase()).not.toContain('br-ksa-f-13');
+    expectNoHashChainComplianceErrors(result.messages);
   }, SANDBOX_TIMEOUT);
 
   // ============================================
@@ -376,8 +381,7 @@ describe('ZATCA Sandbox Integration', () => {
     expect(result.valid).toBe(true);
     expect(result.messages.join(' ').toLowerCase()).not.toContain('instructionnote');
     expect(result.messages.join(' ').toLowerCase()).not.toContain('billingreference');
-    expect(result.messages.join(' ').toLowerCase()).not.toContain('previous invoice hash');
-    expect(result.messages.join(' ').toLowerCase()).not.toContain('br-ksa-f-13');
+    expectNoHashChainComplianceErrors(result.messages);
   }, SANDBOX_TIMEOUT);
 
   // ============================================
