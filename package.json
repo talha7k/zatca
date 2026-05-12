@@ -1,7 +1,7 @@
 {
   "name": "@talha7k/zatca",
-  "version": "0.11.0",
-  "description": "ZATCA Phase 2 e-invoicing integration for Saudi Arabia — TypeScript, framework-agnostic, production-grade",
+  "version": "0.11.1",
+  "description": "ZATCA Phase 2 e-invoicing integration for Saudi Arabia \u2014 TypeScript, framework-agnostic, production-grade",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "sideEffects": false,
@@ -29,6 +29,8 @@
   "dependencies": {
     "@talha7k/zatca-qr": "^1.2.2",
     "@xmldom/xmldom": "^0.9.10",
+    "dotenv": "^8.2.0",
+    "node-fetch": "^3.3.2",
     "xml-crypto": "^6.1.2",
     "xmldsigjs": "^2.8.7"
   },

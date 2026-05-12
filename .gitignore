@@ -4,6 +4,6 @@ dist/
 *.tsbuildinfo
 .DS_Store
 sdk/
-.env
 *.log
 tests/integration/debug-*
+config.bat
