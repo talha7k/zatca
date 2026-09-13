@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { XMLParser } from 'fast-xml-parser';
 import { generateInvoiceXml } from '../../src/xml/invoice.js';
-import { generateCreditNoteXml } from '../../src/xml/credit-note.js';
+import { generateCreditNoteXml, generateDebitNoteXml } from '../../src/xml/credit-note.js';
 import type { CreditNoteData, InvoiceData } from '../../src/types.js';
 
 // UBL 2.1 + ZATCA XML Implementation Guide structural assertions. Output is
@@ -397,6 +397,19 @@ describe('generateCreditNoteXml · models credit notes on the Invoice root', () 
     // for simplified B2C notes — pinned after the XSD fix (SDK conformance).
     // fast-xml-parser models the childless party as an empty string.
     expect(doc.Invoice['cac:AccountingCustomerParty']).toBe('');
+  });
+});
+
+describe('generateDebitNoteXml (383)', () => {
+  test('emits a 383-typed note with the BillingReference intact', () => {
+    const note = { ...baseCreditNote(), invoiceTypeCode: '383' };
+    const doc = parse(generateDebitNoteXml(note));
+    expect(doc.Invoice['cbc:InvoiceTypeCode']['#text'] ?? doc.Invoice['cbc:InvoiceTypeCode']).toBe('383');
+    expect(doc.Invoice['cac:BillingReference']).toBeDefined();
+  });
+
+  test('rejects a non-383 type code instead of emitting a mistyped note', () => {
+    expect(() => generateDebitNoteXml({ ...baseCreditNote(), invoiceTypeCode: '381' })).toThrow(/383/);
   });
 });
 

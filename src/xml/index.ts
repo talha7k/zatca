@@ -1,2 +1,2 @@
 export { generateInvoiceXml } from './invoice.js';
-export { generateCreditNoteXml } from './credit-note.js';
+export { generateCreditNoteXml, generateDebitNoteXml } from './credit-note.js';

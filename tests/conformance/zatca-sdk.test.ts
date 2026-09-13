@@ -35,7 +35,7 @@ import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { generateInvoiceXml, generateCreditNoteXml } from '../../src/xml/index.js';
+import { generateInvoiceXml, generateCreditNoteXml, generateDebitNoteXml } from '../../src/xml/index.js';
 import { signInvoice, canonicalizeForHash } from '../../src/signing/index.js';
 import { signWithCsid } from './csid-signer.js';
 import type { SignResult, SignWithExternalSignerParams } from '../../src/signing/index.js';
@@ -448,6 +448,28 @@ describe.skipIf(!SDK_READY)('ZATCA SDK conformance — document matrix', () => {
       tmpFile('validate-credit-note.xml', await signForConformance(generateCreditNoteXml(creditNote), creditNote)),
     );
     logFindings('credit-note', report);
+    expect(report.crashed).toBe(false);
+    expect(report.xsdErrors).toEqual([]);
+    expect(report.schematronErrors).toEqual([]);
+    expect(report.stageResults.KSA).toBe('PASSED');
+  }, 120_000);
+
+  test('debit note (383) passes XSD+EN+KSA', async () => {
+    const base = createTestCreditNote();
+    const debitNote = {
+      ...base,
+      invoiceNumber: 'SDN00001',
+      invoiceTypeCode: '383',
+      reason: 'Additional charges',
+      supplier: {
+        ...base.supplier,
+        address: { ...base.supplier.address, additionalNumber: '8008' },
+      },
+    };
+    const { report } = runValidate(
+      tmpFile('validate-debit-note.xml', await signForConformance(generateDebitNoteXml(debitNote), debitNote)),
+    );
+    logFindings('debit-note', report);
     expect(report.crashed).toBe(false);
     expect(report.xsdErrors).toEqual([]);
     expect(report.schematronErrors).toEqual([]);

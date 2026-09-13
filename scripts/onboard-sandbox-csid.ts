@@ -103,8 +103,8 @@ const csrResult = generateCSR({
   vatNumber: vat,
   crNumber: '1234567890',
   country: 'SA',
-  commonName: flag('--common-name') ?? `TST-${vat}-SANDBOX01`,
-  invoiceType: '0111001',
+  commonName: flag('--common-name') ?? 'SANDBOX01',
+  invoiceType: '1100',
   location: {
     city: 'Riyadh', district: 'Al Olaya', street: 'King Fahd Road',
     buildingNumber: '1234', postalCode: '12211',

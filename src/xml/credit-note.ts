@@ -44,6 +44,33 @@ export function generateCreditNoteXml(creditNote: CreditNoteData): string {
   }
 }
 
+/**
+ * Generate a complete ZATCA-compliant UBL 2.1 debit note XML string.
+ *
+ * Debit notes share the credit-note document shape (Invoice root with a
+ * BillingReference to the original invoice); only the type code differs
+ * (383 vs 381). The code is asserted here so a copy-paste slip cannot emit
+ * a mistyped note.
+ */
+export function generateDebitNoteXml(debitNote: CreditNoteData): string {
+  if (debitNote.invoiceTypeCode !== '383') {
+    throw new ZatcaError(
+      `Debit notes require invoiceTypeCode '383', got '${debitNote.invoiceTypeCode}'`,
+      ZatcaErrorCode.VALIDATION_ERROR,
+    );
+  }
+  try {
+    return buildCreditNoteXml(debitNote);
+  } catch (error) {
+    if (error instanceof ZatcaError) throw error;
+    throw new ZatcaError(
+      `Failed to generate debit note XML: ${(error as Error).message}`,
+      ZatcaErrorCode.XML_GEN_ERROR,
+      error,
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // XML fragment generators
 // ---------------------------------------------------------------------------
