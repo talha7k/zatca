@@ -739,3 +739,58 @@ export function decryptPrivateKey(encryptedData: string, masterKey: string): str
     );
   }
 }
+
+/**
+ * Decode a ZATCA `binarySecurityToken` into a PEM certificate.
+ *
+ * Handles the shapes observed in the wild:
+ * - a PEM block verbatim (sandbox compliance responses),
+ * - a PEM block embedded in a larger (JSON-ish) string,
+ * - base64 DER (single encoding),
+ * - base64 of base64 DER (double encoding — seen on production CSIDs).
+ *
+ * @throws ZatcaError when no certificate material is found.
+ */
+export function decodeTokenToPem(binarySecurityToken: string): string {
+  const input = (binarySecurityToken ?? '').trim();
+  if (!input) {
+    throw new ZatcaError('binarySecurityToken is empty', ZatcaErrorCode.CERT_LOAD_ERROR);
+  }
+  const direct = extractPem(input);
+  if (direct) return direct;
+  const once = tryBase64Decode(input);
+  if (once !== undefined) {
+    const nested = extractPem(once.toString('utf8'));
+    if (nested) return nested;
+    const twice = tryBase64Decode(once.toString('utf8').trim());
+    if (twice !== undefined && twice.length > 0 && twice[0] === 0x30) {
+      return derToPem(twice);
+    }
+    if (once.length > 0 && once[0] === 0x30) {
+      return derToPem(once);
+    }
+  }
+  throw new ZatcaError(
+    'binarySecurityToken contains no recognizable PEM or DER certificate',
+    ZatcaErrorCode.CERT_LOAD_ERROR,
+  );
+}
+
+function extractPem(s: string): string | undefined {
+  const m = s.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/);
+  return m ? m[0] : undefined;
+}
+
+function tryBase64Decode(s: string): Buffer | undefined {
+  const compact = s.replace(/\s/g, '');
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(compact) || compact.length % 4 !== 0 || compact.length === 0) {
+    return undefined;
+  }
+  return Buffer.from(compact, 'base64');
+}
+
+function derToPem(der: Buffer): string {
+  const body = der.toString('base64');
+  const lines = body.match(/.{1,64}/g) ?? [body];
+  return `-----BEGIN CERTIFICATE-----\n${lines.join('\n')}\n-----END CERTIFICATE-----`;
+}

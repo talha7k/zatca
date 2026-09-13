@@ -4,6 +4,7 @@ export {
   extractPublicKey,
   extractRawPublicKey,
   extractCertificateSignature,
+  decodeTokenToPem,
   parseCertificate,
   isCertificateExpired,
   isCertificateExpiringSoon,
