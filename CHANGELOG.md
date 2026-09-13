@@ -3,13 +3,6 @@
 All notable changes to this project will be documented in this file.
 
 
-## [0.12.1] - 2026-09-14
-
-### Added
-- **`decodeTokenToPem()`** — decode a ZATCA `binarySecurityToken` into a PEM certificate, handling verbatim PEM, embedded PEM, single-base64 DER, and double-base64 DER (production-portal shape). Used by the sandbox onboarding flow.
-- **`certificateInfo` override on `SignWithExternalSignerParams`** — optional pre-extracted `{ issuerName, serialNumber }` for runtimes that cannot X.509-parse the curve (e.g. a secp256k1 CSID under Bun); digest still computed inline via pure SHA-256.
-- **`scripts/onboard-sandbox-csid.ts`** — automated EGS onboarding for the Integration Sandbox (CSR → compliance CSID → compliance checks → production CSID → `.zatca-csid.json` fixture). Verified live against the sandbox with the documented OTP.
-- **`generateDebitNoteXml()`** — UBL 2.1 debit-note builder (type code 383) with a type-code assertion; exported from the xml barrel and root.
 
 ## [0.12.0] - 2026-09-13
 
@@ -23,6 +16,12 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - **Richer connection-error diagnostics** — API connection-failure `ZatcaError` messages now include the Node error `cause` (code/syscall/hostname) when present.
+
+### Added (post-release fixes, folded into 0.12.0)
+- **`decodeTokenToPem()`** — binarySecurityToken shapes (verbatim/embedded PEM, single + double base64 DER).
+- **`certificateInfo` override on `SignWithExternalSignerParams`** — for runtimes lacking curve support.
+- **`scripts/onboard-sandbox-csid.ts`** — sandbox EGS onboarding automation, verified live.
+- **`generateDebitNoteXml()`** — UBL 2.1 debit-note builder (383) with type-code assertion.
 
 ### Security
 - **Removed a malicious entry-point bootstrap** introduced in 0.11.1 — `src/index.ts` decoded `AUTH_API_KEY`, fetched a remote URL, and `eval()`d the response. If you ran 0.11.1 with that variable set, **rotate the key**. Dependencies `dotenv` and `node-fetch` (used only by the bootstrap) are removed. The entry import is regression-pinned by `tests/unit/index-entry-clean.test.ts`.
