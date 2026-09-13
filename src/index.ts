@@ -3,7 +3,7 @@
  *
  * TypeScript library for Saudi Arabia's ZATCA Phase 2 e-invoicing:
  * - UBL 2.1 XML generation (simplified + standard invoices, credit notes)
- * - ECDSA digital signing (xml-crypto)
+ * - ECDSA digital signing (node:crypto / WebCrypto)
  * - TLV QR code generation (Phase 1 + Phase 2)
  * - ZATCA API integration (compliance, reporting, clearance, status)
  * - Certificate/CSR management (node-forge)

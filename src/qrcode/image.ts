@@ -76,3 +76,30 @@ export async function generatePhase1QRImage(
 ): Promise<string> {
   return generateQRImage('Phase 1', generatePhase1QRCodeData(data), options);
 }
+
+// ---------------------------------------------------------------------------
+// Effect twins
+// ---------------------------------------------------------------------------
+
+import { Effect } from 'effect';
+import { toZatcaEffectError, type ZatcaEffectError } from '../effect/errors.js';
+
+/** Effect twin of {@link generatePhase2QRImage}. */
+export const generatePhase2QRImageEffect = Effect.fn('generatePhase2QRImageEffect')(
+  function* (data: Phase2QRData, options?: QRImageOptions): Effect.fn.Return<string, ZatcaEffectError> {
+    return yield* Effect.tryPromise({
+      try: () => generatePhase2QRImage(data, options),
+      catch: toZatcaEffectError,
+    });
+  },
+);
+
+/** Effect twin of {@link generatePhase1QRImage}. */
+export const generatePhase1QRImageEffect = Effect.fn('generatePhase1QRImageEffect')(
+  function* (data: Phase1QRData, options?: QRImageOptions): Effect.fn.Return<string, ZatcaEffectError> {
+    return yield* Effect.tryPromise({
+      try: () => generatePhase1QRImage(data, options),
+      catch: toZatcaEffectError,
+    });
+  },
+);

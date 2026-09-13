@@ -9,4 +9,4 @@ export type { Phase1QRData, Phase2QRData } from '../types.js';
 
 // Local wrappers with ZatcaError handling
 export { generateQRCodeData, generatePhase1QRCodeData } from './generate.js';
-export { generatePhase2QRImage, generatePhase1QRImage } from './image.js';
+export { generatePhase2QRImage, generatePhase1QRImage, generatePhase2QRImageEffect, generatePhase1QRImageEffect } from './image.js';

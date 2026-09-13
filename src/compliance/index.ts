@@ -197,6 +197,14 @@ function patchCreditDebitInvoice(
     /(<cac:AdditionalDocumentReference>[\s\S]*?<cbc:ID>ICV<\/cbc:ID>[\s\S]*?<\/cac:AdditionalDocumentReference>)/,
     `${billingReference}\n\n$1`,
   );
+  if (!patched.includes('<cac:BillingReference>')) {
+    // No ICV counter block: anchor on the first AdditionalDocumentReference
+    // (PIH) or the supplier party instead — BT-25 must never be dropped.
+    patched = patched.replace(
+      /(<cac:AdditionalDocumentReference>|<cac:AccountingSupplierParty>)/,
+      `${billingReference}\n\n$1`,
+    );
+  }
   patched = patched.replace(/(<cac:TaxTotal>)/, `${paymentMeans}\n\n$1`);
   return patched;
 }

@@ -19,9 +19,11 @@
  */
 
 import crypto from 'node:crypto';
+import { Effect } from 'effect';
 import { ZatcaError, ZatcaErrorCode } from '../errors.js';
 import { validateCSRParams } from '../utils/validation.js';
 import type { CSRParams, CSRResult } from '../types.js';
+import { toZatcaEffectError, type ZatcaEffectError } from '../effect/errors.js';
 
 // ============================================================
 // ZATCA Environment Constants
@@ -264,103 +266,126 @@ function buildExtensionRequestAttribute(params: CSRParams, environment: string):
 }
 
 // ============================================================
-// Main CSR Generation
+// Key Generation & CSR Assembly
 // ============================================================
+
+/** Generate an EC key pair with PEM (SPKI public / PKCS#8 private) encoding. */
+function generateEcKeyPairPem(namedCurve: string): { privateKey: string; publicKey: string } {
+  return crypto.generateKeyPairSync('ec', {
+    namedCurve,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  });
+}
+
+/**
+ * Generate the CSR key pair: secp256k1 (ZATCA requirement) with a
+ * prime256v1 (P-256) fallback for runtimes whose crypto provider does not
+ * support secp256k1 (e.g. Bun's BoringSSL). Production has no fallback —
+ * it fails hard instead of emitting a non-compliant key.
+ */
+function generateCsrKeyPair(environment: string): { privateKey: string; publicKey: string } {
+  try {
+    return generateEcKeyPairPem('secp256k1');
+  } catch {
+    if (environment === 'production') {
+      throw new ZatcaError(
+        'secp256k1 is required for production CSR generation, but this runtime does not support it',
+        ZatcaErrorCode.CERT_GEN_ERROR,
+      );
+    }
+    return generateEcKeyPairPem('prime256v1');
+  }
+}
+
+/**
+ * Build the subject DN per the ZATCA Developer Portal User Manual (section 5.3):
+ *   C  = Country code (SA default)
+ *   OU = Organization unit (common name)
+ *   O  = Organization name (English)
+ *   CN = Common name with environment prefix + VAT number
+ */
+function buildSubjectDn(params: CSRParams, environment: string): Buffer {
+  const cnPrefix = CN_PREFIXES[environment] || '';
+  const commonName = `${cnPrefix}${params.commonName}-${params.vatNumber}`;
+
+  return derSequence(
+    derRdn(derAttributeTypeAndValue('2.5.4.6', derPrintableString(params.country || 'SA'))),
+    derRdn(derAttributeTypeAndValue('2.5.4.11', derUtf8String(params.commonName))),
+    derRdn(derAttributeTypeAndValue('2.5.4.10', derUtf8String(params.organizationNameEn))),
+    derRdn(derAttributeTypeAndValue('2.5.4.3', derUtf8String(commonName))),
+  );
+}
+
+/** Export a PEM public key as raw SubjectPublicKeyInfo DER. */
+function exportSpkiDer(publicKey: string): Buffer {
+  return crypto
+    .createPublicKey(publicKey)
+    .export({ type: 'spki', format: 'der' });
+}
+
+/**
+ * Build the TBS CertificationRequestInfo:
+ *   SEQUENCE { version 0, subject, subjectPKInfo, attributes [0] }
+ */
+function buildCertificationRequestInfo(
+  params: CSRParams,
+  environment: string,
+  subject: Buffer,
+  spkiDer: Buffer,
+): Buffer {
+  const attributes = buildExtensionRequestAttribute(params, environment);
+  return derSequence(
+    derInteger(0),                 // version
+    subject,                       // subject
+    spkiDer,                       // subjectPKInfo (raw DER from Node.js)
+    derExplicitTag(0, attributes), // attributes [0]
+  );
+}
+
+/** Sign the CertificationRequestInfo with ECDSA-SHA256 (DER-encoded signature). */
+function signCertificationRequestInfo(certRequestInfo: Buffer, privateKey: string): Buffer {
+  const sign = crypto.createSign('SHA256');
+  sign.update(certRequestInfo);
+  return sign.sign(privateKey);
+}
+
+/** Assemble the signed CertificationRequest and encode it as PEM. */
+function buildCsrPem(certRequestInfo: Buffer, privateKey: string): string {
+  const signatureAlgorithm = derSequence(derOid('1.2.840.10045.4.3.2'));
+  const certificationRequest = derSequence(
+    certRequestInfo,
+    signatureAlgorithm,
+    derBitString(signCertificationRequestInfo(certRequestInfo, privateKey)),
+  );
+  return toPem(certificationRequest, 'CERTIFICATE REQUEST');
+}
 
 /**
  * Generate an ECDSA secp256k1 key pair and PKCS#10 CSR for ZATCA onboarding.
  *
  * The CSR is built per the ZATCA Developer Portal User Manual (section 5.3):
  *
- * Subject DN:
- *   C  = Country code (SA)
- *   OU = Organization unit (branch name)
- *   O  = Organization name (English)
- *   CN = Common name (format depends on environment)
- *
  * Extensions (as CSR attributes):
  *   1. Certificate Template Name (OID 1.3.6.1.4.1.311.20.2)
  *   2. Subject Alternative Name (OID 2.5.29.17) with dirName
  *
- * Key: ECDSA prime256v1 (P-256) (256-bit)
+ * Key: ECDSA prime256v1 fallback only in non-production (see generateCsrKeyPair)
  * Signature: ecdsa-with-SHA256
  */
 export function generateCSR(params: CSRParams, environment: string = 'production'): CSRResult {
   try {
     validateCSRParams(params);
 
-    // 1. Generate ECDSA key pair (secp256k1 preferred, prime256v1 fallback for Bun)
-    let privateKey: string;
-    let publicKey: string;
-    try {
-      ({ privateKey, publicKey } = crypto.generateKeyPairSync('ec', {
-        namedCurve: 'secp256k1',
-        publicKeyEncoding: { type: 'spki', format: 'pem' },
-        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-      }));
-    } catch {
-      if (environment === 'production') {
-        throw new ZatcaError(
-          'secp256k1 is required for production CSR generation, but this runtime does not support it',
-          ZatcaErrorCode.CERT_GEN_ERROR,
-        );
-      }
-
-      // Bun's BoringSSL doesn't support secp256k1 — sandbox falls back to prime256v1 (P-256)
-      ({ privateKey, publicKey } = crypto.generateKeyPairSync('ec', {
-        namedCurve: 'prime256v1',
-        publicKeyEncoding: { type: 'spki', format: 'pem' },
-        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-      }));
-    }
-
-    // 2. Build Subject DN
-    const cnPrefix = CN_PREFIXES[environment] || '';
-    const commonName = `${cnPrefix}${params.commonName}-${params.vatNumber}`;
-
-    const subject = derSequence(
-      // C = SA
-      derRdn(derAttributeTypeAndValue('2.5.4.6', derPrintableString(params.country || 'SA'))),
-      // OU = Organization unit
-      derRdn(derAttributeTypeAndValue('2.5.4.11', derUtf8String(params.commonName))),
-      // O = Organization name
-      derRdn(derAttributeTypeAndValue('2.5.4.10', derUtf8String(params.organizationNameEn))),
-      // CN = Common name
-      derRdn(derAttributeTypeAndValue('2.5.4.3', derUtf8String(commonName))),
+    const { privateKey, publicKey } = generateCsrKeyPair(environment);
+    const subject = buildSubjectDn(params, environment);
+    const certRequestInfo = buildCertificationRequestInfo(
+      params,
+      environment,
+      subject,
+      exportSpkiDer(publicKey),
     );
-
-    // 3. Get the SubjectPublicKeyInfo from the PEM
-    const spkiDer = crypto
-      .createPublicKey(publicKey)
-      .export({ type: 'spki', format: 'der' });
-
-    // 4. Build the CertificationRequestInfo (TBS)
-    // SEQUENCE { version, subject, subjectPKInfo, attributes [0] }
-    const attributes = buildExtensionRequestAttribute(params, environment);
-    const certRequestInfo = derSequence(
-      derInteger(0),                              // version
-      subject,                                    // subject
-      spkiDer,                                    // subjectPKInfo (raw DER from Node.js)
-      derExplicitTag(0, attributes),              // attributes [0]
-    );
-
-    // 5. Sign the CSR with ECDSA-SHA256
-    const sign = crypto.createSign('SHA256');
-    sign.update(certRequestInfo);
-    const signatureDer = sign.sign(privateKey);
-
-    // 6. Build the signature AlgorithmIdentifier
-    const signatureAlgorithm = derSequence(derOid('1.2.840.10045.4.3.2'));
-
-    // 7. Build the complete CSR (CertificationRequest)
-    const certificationRequest = derSequence(
-      certRequestInfo,
-      signatureAlgorithm,
-      derBitString(signatureDer),
-    );
-
-    // 8. Convert to PEM
-    const csrPem = toPem(certificationRequest, 'CERTIFICATE REQUEST');
+    const csrPem = buildCsrPem(certRequestInfo, privateKey);
 
     return {
       csr: csrPem,
@@ -386,21 +411,45 @@ export function generateCSR(params: CSRParams, environment: string = 'production
  */
 export function generateECDSAKeyPair(): { privateKey: string; publicKey: string } {
   try {
-    const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', {
-      namedCurve: 'secp256k1',
-      publicKeyEncoding: { type: 'spki', format: 'pem' },
-      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-    });
-    return { privateKey, publicKey };
+    return generateEcKeyPairPem('secp256k1');
   } catch {
     // Bun's BoringSSL doesn't support secp256k1 — non-production tooling may fall back to prime256v1 (P-256).
-    const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', {
-      namedCurve: 'prime256v1',
-      publicKeyEncoding: { type: 'spki', format: 'pem' },
-      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-    });
-    return { privateKey, publicKey };
+    return generateEcKeyPairPem('prime256v1');
   }
+}
+
+// ============================================================
+// Effect twins
+// ============================================================
+
+/**
+ * Effect twin of {@link generateCSR} for composing onboarding flows
+ * (generateCSR → requestCSID → verifyCompliance) in Effect pipelines. The
+ * synchronous work (validation, key generation, DER encoding, signing) runs
+ * lazily when the effect is executed; failures surface as
+ * ZatcaValidationError (bad CSR params) or ZatcaApiError (other generation
+ * failures).
+ */
+export function generateCSREffect(
+  params: CSRParams,
+  environment: string = 'production',
+): Effect.Effect<CSRResult, ZatcaEffectError> {
+  return Effect.try({
+    try: () => generateCSR(params, environment),
+    catch: toZatcaEffectError,
+  });
+}
+
+/**
+ * Effect twin of {@link generateECDSAKeyPair}: the same key pair, deferred
+ * until the effect runs. Key generation never fails (it falls back to
+ * prime256v1), so this effect has an empty error channel.
+ */
+export function generateECDSAKeyPairEffect(): Effect.Effect<{
+  privateKey: string;
+  publicKey: string;
+}> {
+  return Effect.sync(() => generateECDSAKeyPair());
 }
 
 /**

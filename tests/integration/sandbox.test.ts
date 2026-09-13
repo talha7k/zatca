@@ -8,7 +8,7 @@
  * Sandbox OTP can be ANY value (e.g. '123345').
  */
 
-import { describe, test, expect, beforeAll } from 'bun:test';
+import { describe, test, expect } from 'bun:test';
 import crypto from 'crypto';
 import {
   asCertificatePem,
@@ -86,8 +86,14 @@ function extractCertSignatureFromDer(der: Buffer): string {
   return signatureBytes.toString('base64');
 }
 
-// Shared state across tests (sequential execution)
-let client: ZatcaApiClient;
+// Shared state across tests (sequential execution). The client is created
+// eagerly at module level — constructing ZatcaApiClient performs no I/O.
+const client = new ZatcaApiClient({
+  environment: 'sandbox',
+  clearanceStatus: '0', // Reporting mode (B2C)
+  timeout: 30_000,
+});
+
 let csr: string;
 let privateKey: string;
 let complianceCSID: ZatcaCSIDResponse;
@@ -106,6 +112,51 @@ function logZatcaAlert(
   details: Record<string, unknown>,
 ): void {
   console.error(`[ZATCA ALERT] ${operation}`, JSON.stringify(details, null, 2));
+}
+
+/** Known sandbox failure mode: production CSID cert ≠ CSR private key. */
+function expectComplianceSigningBlocked(error: unknown): void {
+  const message = (error as Error).message;
+  logZatcaAlert('Reporting blocked before API submission', {
+    rootCause: 'The production CSID certificate public key does not match the CSR private key.',
+    message,
+  });
+  expect(message).toContain('Private key does not match the supplied CSID certificate');
+  (globalThis as any).__reportingBlocked = true;
+}
+
+/** Known sandbox failure mode: reporting rejected with publicKey_QRCODE_INVALID. */
+function expectReportingRejectedByQrCode(error: unknown): void {
+  const zatcaError = error as { message: string; details?: { alerts?: unknown[]; httpStatus?: number } };
+  logZatcaAlert('Reporting rejected by ZATCA sandbox', {
+    message: zatcaError.message,
+    httpStatus: zatcaError.details?.httpStatus,
+    alerts: zatcaError.details?.alerts,
+  });
+  expect(zatcaError.message).toContain('publicKey_QRCODE_INVALID');
+  (globalThis as any).__reportingBlocked = true;
+}
+
+/** A NEW invoice for reporting (different from the compliance one). */
+function buildReportingInvoice(): InvoiceData {
+  return createDiscountedTestInvoice({
+    invoiceNumber: 'SME00002',
+    invoiceCounter: 2,
+    supplier: {
+      nameAr: 'Maximum Speed Tech Supply LTD',
+      nameEn: 'Maximum Speed Tech Supply LTD',
+      vatNumber: '399999999900003',
+      crNumber: '1010010000',
+      address: {
+        street: 'Riyadh Branch',
+        building: '8008',
+        district: 'Al Olaya',
+        city: 'Riyadh',
+        postalCode: '12345',
+        countryCode: 'SA',
+      },
+    },
+  });
 }
 
 function expectNoHashChainComplianceErrors(messages: string[]): void {
@@ -184,15 +235,7 @@ function logCertificateDiagnostics(label: string, b64Der: string, certPem: strin
   console.log(`🔍 [${label} DEBUG] End diagnostics\n`);
 }
 
-describe('ZATCA Sandbox Integration', () => {
-  beforeAll(() => {
-    client = new ZatcaApiClient({
-      environment: 'sandbox',
-      clearanceStatus: '0', // Reporting mode (B2C)
-      timeout: 30_000,
-    });
-  });
-
+describe('ZATCA Sandbox · Step 1-2: CSR & compliance CSID', () => {
   // ============================================
   // STEP 1: Generate CSR
   // ============================================
@@ -244,10 +287,12 @@ describe('ZATCA Sandbox Integration', () => {
       secret: complianceCSID.secret,
     };
   }, SANDBOX_TIMEOUT);
+});
 
-  // ============================================
-  // STEP 3: Generate + Sign Invoice for Compliance
-  // ============================================
+// ============================================
+// STEP 3: Generate + Sign Invoice for Compliance
+// ============================================
+describe('ZATCA Sandbox · Step 3: sign compliance invoice', () => {
   test('Step 3: Generate and sign discounted simplified invoice', () => {
     const invoiceData = createDiscountedTestInvoice();
 
@@ -271,13 +316,7 @@ describe('ZATCA Sandbox Integration', () => {
         qrData,
       });
     } catch (error) {
-      const message = (error as Error).message;
-      logZatcaAlert('Reporting blocked before API submission', {
-        rootCause: 'The production CSID certificate public key does not match the CSR private key.',
-        message,
-      });
-      expect(message).toContain('Private key does not match the supplied CSID certificate');
-      (globalThis as any).__reportingBlocked = true;
+      expectComplianceSigningBlocked(error);
       return;
     }
 
@@ -305,10 +344,12 @@ describe('ZATCA Sandbox Integration', () => {
       base64Invoice: Buffer.from(signResult.signedXml).toString('base64'),
     };
   });
+});
 
-  // ============================================
-  // STEP 4: Verify Compliance
-  // ============================================
+// ============================================
+// STEP 4: Verify Compliance
+// ============================================
+describe('ZATCA Sandbox · Step 4: compliance verification', () => {
   test('Step 4: Verify compliance (POST /compliance/invoices)', async () => {
     const stored = (globalThis as any).__complianceInvoice;
 
@@ -329,10 +370,12 @@ describe('ZATCA Sandbox Integration', () => {
     expect(result.messages.join(' ').toLowerCase()).not.toContain('allowance');
     expectNoHashChainComplianceErrors(result.messages);
   }, SANDBOX_TIMEOUT);
+});
 
-  // ============================================
-  // STEP 4b: Verify Simplified Credit Note Compliance
-  // ============================================
+// ============================================
+// STEP 4b: Verify Simplified Credit Note Compliance
+// ============================================
+describe('ZATCA Sandbox · Step 4b: credit note compliance', () => {
   test('Step 4b: Verify simplified credit note compliance', async () => {
     const creditNoteData = createTestCreditNote({
       invoiceNumber: 'SCN-COMP-001',
@@ -383,10 +426,12 @@ describe('ZATCA Sandbox Integration', () => {
     expect(result.messages.join(' ').toLowerCase()).not.toContain('billingreference');
     expectNoHashChainComplianceErrors(result.messages);
   }, SANDBOX_TIMEOUT);
+});
 
-  // ============================================
-  // STEP 5: Request Production CSID
-  // ============================================
+// ============================================
+// STEP 5: Request Production CSID
+// ============================================
+describe('ZATCA Sandbox · Step 5: production CSID', () => {
   test('Step 5: Request Production CSID (POST /production/csids)', async () => {
     const requestId = complianceCSID.requestId!;
 
@@ -411,30 +456,14 @@ describe('ZATCA Sandbox Integration', () => {
       secret: productionCSID.secret,
     };
   }, SANDBOX_TIMEOUT);
+});
 
-  // ============================================
-  // STEP 6: Report Invoice
-  // ============================================
+// ============================================
+// STEP 6 + 7: Report Invoice & Check Status
+// ============================================
+describe('ZATCA Sandbox · Step 6-7: reporting & status', () => {
   test('Step 6: Report simplified invoice (POST /invoices/reporting/single)', async () => {
-    // Generate a NEW invoice for reporting (different from compliance)
-    const invoiceData = createDiscountedTestInvoice({
-      invoiceNumber: 'SME00002',
-      invoiceCounter: 2,
-      supplier: {
-        nameAr: 'Maximum Speed Tech Supply LTD',
-        nameEn: 'Maximum Speed Tech Supply LTD',
-        vatNumber: '399999999900003',
-        crNumber: '1010010000',
-        address: {
-          street: 'Riyadh Branch',
-          building: '8008',
-          district: 'Al Olaya',
-          city: 'Riyadh',
-          postalCode: '12345',
-          countryCode: 'SA',
-        },
-      },
-    });
+    const invoiceData = buildReportingInvoice();
 
     const xml = generateInvoiceXml(invoiceData);
     expectDiscountedInvoiceXml(xml);
@@ -460,14 +489,7 @@ describe('ZATCA Sandbox Integration', () => {
         invoice: base64Invoice,
       });
     } catch (error) {
-      const zatcaError = error as { message: string; details?: { alerts?: unknown[]; httpStatus?: number } };
-      logZatcaAlert('Reporting rejected by ZATCA sandbox', {
-        message: zatcaError.message,
-        httpStatus: zatcaError.details?.httpStatus,
-        alerts: zatcaError.details?.alerts,
-      });
-      expect(zatcaError.message).toContain('publicKey_QRCODE_INVALID');
-      (globalThis as any).__reportingBlocked = true;
+      expectReportingRejectedByQrCode(error);
       return;
     }
 

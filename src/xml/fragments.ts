@@ -6,20 +6,26 @@ import type {
   SupplierInfo,
   TaxSubtotal,
 } from '../types.js';
-import { escapeXml, formatAmount } from '../utils/xml.js';
+import { escapeXml, formatAmount, formatUnitPrice } from '../utils/xml.js';
+import { add } from '../utils/money.js';
+import type { DecimalInput } from '../utils/money.js';
 
 export type MonetaryDocument = {
   invoiceCounter?: number;
   previousInvoiceHash?: string;
   currencyCode: string;
-  taxAmount: number;
+  taxAmount: DecimalInput;
   taxSubtotals: TaxSubtotal[];
   allowanceCharges?: AllowanceCharge[];
-  allowanceTotalAmount?: number;
-  lineExtensionAmount: number;
-  taxExclusiveAmount: number;
-  taxInclusiveAmount: number;
-  payableAmount: number;
+  allowanceTotalAmount?: DecimalInput;
+  lineExtensionAmount: DecimalInput;
+  taxExclusiveAmount: DecimalInput;
+  taxInclusiveAmount: DecimalInput;
+  /** BT-113 — prepaid amount; BR-CO-16: BT-115 = BT-112 − BT-113 + BT-114. */
+  prepaidAmount?: DecimalInput;
+  /** BT-114 — document-level rounding amount (settles ±halala differences; QR tag 4 carries the resulting BT-115). */
+  roundingAmount?: DecimalInput;
+  payableAmount: DecimalInput;
 };
 
 export function xmlUBLExtensions(): string {
@@ -60,12 +66,16 @@ export function xmlSignature(): string {
 }
 
 function xmlPostalAddress(addr: PostalAddress, indent: string): string {
+  // KSA-23: PlotIdentification sits between BuildingNumber and CitySubdivisionName per the UBL 2.1 element sequence.
+  const plotIdentification = addr.additionalNumber
+    ? `\n${indent}  <cbc:PlotIdentification>${escapeXml(addr.additionalNumber)}</cbc:PlotIdentification>`
+    : '';
   return `${indent}<cac:PostalAddress>
 ${indent}  <cbc:StreetName>${escapeXml(addr.street)}</cbc:StreetName>
-${indent}  <cbc:BuildingNumber>${escapeXml(addr.building)}</cbc:BuildingNumber>
+${indent}  <cbc:BuildingNumber>${escapeXml(addr.building)}</cbc:BuildingNumber>${plotIdentification}
 ${indent}  <cbc:CitySubdivisionName>${escapeXml(addr.district)}</cbc:CitySubdivisionName>
 ${indent}  <cbc:CityName>${escapeXml(addr.city)}</cbc:CityName>
-${indent}  <cbc:PostalZone>${escapeXml(addr.postalCode)}</cbc:PostalZone>
+${indent}  <cbc:PostalZone>${escapeXml(addr.postalCode)}</cbc:PostalZone>${addr.countrySubentity ? `\n${indent}  <cbc:CountrySubentity>${escapeXml(addr.countrySubentity)}</cbc:CountrySubentity>` : ''}
 ${indent}  <cac:Country>
 ${indent}    <cbc:IdentificationCode>${escapeXml(addr.countryCode)}</cbc:IdentificationCode>
 ${indent}  </cac:Country>
@@ -118,7 +128,7 @@ ${addressBlock}
 }
 
 export function xmlTaxTotalBlocks(
-  taxAmount: number,
+  taxAmount: DecimalInput,
   currencyCode: string,
   subtotals: TaxSubtotal[],
 ): string {
@@ -192,11 +202,19 @@ export function xmlMonetaryTotal(document: MonetaryDocument): string {
   const allowanceBlock = document.allowanceTotalAmount
     ? `\n    <cbc:AllowanceTotalAmount currencyID="${escapeXml(document.currencyCode)}">${formatAmount(document.allowanceTotalAmount)}</cbc:AllowanceTotalAmount>`
     : '';
+  // UBL LegalMonetaryTotal sequence: ... AllowanceTotalAmount, ChargeTotalAmount,
+  // PrepaidAmount (BT-113), PayableRoundingAmount (BT-114), PayableAmount (BT-115).
+  const prepaidBlock = document.prepaidAmount
+    ? `\n    <cbc:PrepaidAmount currencyID="${escapeXml(document.currencyCode)}">${formatAmount(document.prepaidAmount)}</cbc:PrepaidAmount>`
+    : '';
+  const roundingBlock = document.roundingAmount
+    ? `\n    <cbc:PayableRoundingAmount currencyID="${escapeXml(document.currencyCode)}">${formatAmount(document.roundingAmount)}</cbc:PayableRoundingAmount>`
+    : '';
 
   return `  <cac:LegalMonetaryTotal>
     <cbc:LineExtensionAmount currencyID="${escapeXml(document.currencyCode)}">${formatAmount(document.lineExtensionAmount)}</cbc:LineExtensionAmount>
     <cbc:TaxExclusiveAmount currencyID="${escapeXml(document.currencyCode)}">${formatAmount(document.taxExclusiveAmount)}</cbc:TaxExclusiveAmount>
-    <cbc:TaxInclusiveAmount currencyID="${escapeXml(document.currencyCode)}">${formatAmount(document.taxInclusiveAmount)}</cbc:TaxInclusiveAmount>${allowanceBlock}
+    <cbc:TaxInclusiveAmount currencyID="${escapeXml(document.currencyCode)}">${formatAmount(document.taxInclusiveAmount)}</cbc:TaxInclusiveAmount>${allowanceBlock}${prepaidBlock}${roundingBlock}
     <cbc:PayableAmount currencyID="${escapeXml(document.currencyCode)}">${formatAmount(document.payableAmount)}</cbc:PayableAmount>
   </cac:LegalMonetaryTotal>`;
 }
@@ -214,11 +232,11 @@ export function xmlInvoiceLine(line: InvoiceLineItem, currencyCode: string): str
 
   return `  <cac:InvoiceLine>
     <cbc:ID>${line.id}</cbc:ID>
-    <cbc:InvoicedQuantity unitCode="${escapeXml(line.unitCode)}">${formatAmount(line.quantity)}</cbc:InvoicedQuantity>
+    <cbc:InvoicedQuantity unitCode="${escapeXml(line.unitCode)}">${formatUnitPrice(line.quantity)}</cbc:InvoicedQuantity>
     <cbc:LineExtensionAmount currencyID="${escapeXml(currencyCode)}">${formatAmount(line.lineExtensionAmount)}</cbc:LineExtensionAmount>${allowanceChargeBlock}
     <cac:TaxTotal>
       <cbc:TaxAmount currencyID="${escapeXml(currencyCode)}">${formatAmount(line.taxAmount)}</cbc:TaxAmount>
-      <cbc:RoundingAmount currencyID="${escapeXml(currencyCode)}">${formatAmount(line.lineExtensionAmount + line.taxAmount)}</cbc:RoundingAmount>
+      <cbc:RoundingAmount currencyID="${escapeXml(currencyCode)}">${formatAmount(add(line.lineExtensionAmount, line.taxAmount))}</cbc:RoundingAmount>
     </cac:TaxTotal>
     <cac:Item>
       <cbc:Name>${escapeXml(line.itemName)}</cbc:Name>
@@ -231,7 +249,7 @@ export function xmlInvoiceLine(line: InvoiceLineItem, currencyCode: string): str
       </cac:ClassifiedTaxCategory>
     </cac:Item>
     <cac:Price>
-      <cbc:PriceAmount currencyID="${escapeXml(currencyCode)}">${formatAmount(line.priceAmount)}</cbc:PriceAmount>
+      <cbc:PriceAmount currencyID="${escapeXml(currencyCode)}">${formatUnitPrice(line.priceAmount)}</cbc:PriceAmount>
     </cac:Price>
   </cac:InvoiceLine>`;
 }

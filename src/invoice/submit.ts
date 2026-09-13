@@ -20,6 +20,7 @@ import type {
   HashChainState,
   ZatcaDocumentData,
 } from '../types.js';
+import { Effect } from 'effect';
 import { ZatcaError, ZatcaErrorCode } from '../errors.js';
 import { validateInvoice } from '../utils/validation.js';
 import { generateCreditNoteXml, generateInvoiceXml } from '../xml/index.js';
@@ -27,6 +28,8 @@ import { signInvoice } from '../signing/index.js';
 import { generatePhase2TLV } from '@talha7k/zatca-qr';
 import { ZatcaApiClient } from '../api/index.js';
 import { extractRawPublicKey } from '../certificate/index.js';
+import { toZatcaEffectError, runZatcaEffect, type ZatcaEffectError } from '../effect/errors.js';
+import { formatAmount } from '../utils/xml.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -79,113 +82,13 @@ export interface SubmitResult {
  *
  * 1. Validate invoice data
  * 2. Generate UBL 2.1 XML
- * 3. Sign with ECDSA-SHA256 (xml-crypto + Node.js crypto)
+ * 3. Sign with ECDSA-SHA256 (Node.js crypto)
  * 4. Generate QR code TLV (Phase 2, 9 tags)
  * 5. Submit to ZATCA (clearance for standard subtype 01, reporting for simplified subtype 02)
  * 6. Update hash chain on success
  */
-export async function submitDocument(options: SubmitOptions): Promise<SubmitResult> {
-  const {
-    invoice,
-    privateKeyPem,
-    certificatePem,
-    certificateSignature,
-    credentials,
-    apiConfig,
-    hashChainState,
-  } = options;
-
-  // --- Input validation (throws directly, no generic wrapper) ---
-  if (!options.invoice) {
-    throw new ZatcaError('invoice data is required', ZatcaErrorCode.VALIDATION_ERROR);
-  }
-  if (!options.privateKeyPem) {
-    throw new ZatcaError('privateKeyPem is required for signing', ZatcaErrorCode.VALIDATION_ERROR);
-  }
-  if (!options.certificatePem) {
-    throw new ZatcaError('certificatePem is required for signing', ZatcaErrorCode.VALIDATION_ERROR);
-  }
-  if (!options.certificateSignature) {
-    throw new ZatcaError('certificateSignature is required for QR code generation', ZatcaErrorCode.VALIDATION_ERROR);
-  }
-  if (!options.credentials) {
-    throw new ZatcaError('credentials (binarySecurityToken + secret) are required', ZatcaErrorCode.VALIDATION_ERROR);
-  }
-  if (!options.apiConfig) {
-    throw new ZatcaError('apiConfig is required', ZatcaErrorCode.VALIDATION_ERROR);
-  }
-
-  try {
-    // 1. Validate document data
-    validateDocument(invoice);
-
-    // 2. Generate UBL 2.1 XML
-    const xml = isCreditNoteData(invoice)
-      ? generateCreditNoteXml(invoice)
-      : generateInvoiceXml(invoice);
-
-    // 3. Sign with ECDSA-SHA256
-    const { signedXml, invoiceHash, signatureValue } = signInvoice({
-      xml,
-      privateKeyPem,
-      certificatePem,
-    });
-
-    // 4. Generate QR code data (Phase 2 — 9 tags)
-    const qrCodeBase64 = generatePhase2TLV({
-      sellerName: invoice.supplier.nameEn,
-      vatNumber: invoice.supplier.vatNumber,
-      timestamp: `${invoice.issueDate}T${invoice.issueTime.replace(/Z$/, '')}`,
-      totalWithVat: invoice.payableAmount.toFixed(2),
-      vatTotal: invoice.taxAmount.toFixed(2),
-      invoiceHash,
-      signatureValue,
-      publicKey: extractRawPublicKey(certificatePem),
-      certificateSignature,
-    });
-
-    // 5. Submit to ZATCA
-    const client = new ZatcaApiClient(apiConfig);
-    const base64Invoice = Buffer.from(signedXml).toString('base64');
-
-    const request = {
-      invoiceHash,
-      uuid: invoice.uuid,
-      invoice: base64Invoice,
-    };
-
-    const submissionType = options.submissionType ?? resolveSubmissionType(invoice);
-    const zatcaResult = submissionType === 'CLEARANCE'
-      ? await client.submitForClearance(credentials, request)
-      : await client.submitForReporting(credentials, request);
-
-    // 6. Update hash chain on success
-    let newHashChainState: HashChainState | undefined;
-    if (zatcaResult.success) {
-      newHashChainState = {
-        lastHash: invoiceHash,
-        lastUuid: invoice.uuid,
-        counter: (hashChainState?.counter ?? 0) + 1,
-        updatedAt: new Date().toISOString(),
-      };
-    }
-
-    return {
-      success: zatcaResult.success,
-      signedXml,
-      invoiceHash,
-      qrCodeBase64,
-      zatcaResult,
-      newHashChainState,
-    };
-  } catch (error) {
-    if (error instanceof ZatcaError) throw error;
-    throw new ZatcaError(
-      `Invoice submission pipeline failed: ${(error as Error).message}`,
-      ZatcaErrorCode.SIGN_ERROR,
-      error,
-    );
-  }
+export function submitDocument(options: SubmitOptions): Promise<SubmitResult> {
+  return runZatcaEffect(submitDocumentEffect(options));
 }
 
 /**
@@ -212,6 +115,127 @@ export function resolveSubmissionType(document: ZatcaDocumentData): SubmissionTy
   }
   return 'REPORTING';
 }
+
+// ---------------------------------------------------------------------------
+// Effect twins
+// ---------------------------------------------------------------------------
+
+/** Synchronous pre-flight (local, non-HTTP) portion of the submission pipeline. */
+interface PreparedSubmission {
+  signedXml: string;
+  invoiceHash: string;
+  qrCodeBase64: string;
+  request: { invoiceHash: string; uuid: string; invoice: string };
+  submissionType: SubmissionType;
+}
+
+function requireOption(value: unknown, message: string): void {
+  if (!value) {
+    throw new ZatcaError(message, ZatcaErrorCode.VALIDATION_ERROR);
+  }
+}
+
+/** Validate → XML → Sign → QR (all local, synchronous steps 1–4). */
+function prepareSubmission(options: SubmitOptions): PreparedSubmission {
+  requireOption(options.invoice, 'invoice data is required');
+  requireOption(options.privateKeyPem, 'privateKeyPem is required for signing');
+  requireOption(options.certificatePem, 'certificatePem is required for signing');
+  requireOption(options.certificateSignature, 'certificateSignature is required for QR code generation');
+  requireOption(options.credentials, 'credentials (binarySecurityToken + secret) are required');
+  requireOption(options.apiConfig, 'apiConfig is required');
+
+  const { invoice, privateKeyPem, certificatePem, certificateSignature } = options;
+
+  validateDocument(invoice);
+
+  const xml = isCreditNoteData(invoice)
+    ? generateCreditNoteXml(invoice)
+    : generateInvoiceXml(invoice);
+
+  const { signedXml, invoiceHash, signatureValue } = signInvoice({
+    xml,
+    privateKeyPem,
+    certificatePem,
+  });
+
+  const qrCodeBase64 = generatePhase2TLV({
+    // QR tag 1 MUST equal the XML cbc:RegistrationName (the official SDK's
+    // QR stage compares them) — the XML emits the Arabic name.
+    sellerName: invoice.supplier.nameAr,
+    vatNumber: invoice.supplier.vatNumber,
+    timestamp: `${invoice.issueDate}T${invoice.issueTime.replace(/Z$/, '')}`,
+    totalWithVat: formatAmount(invoice.payableAmount),
+    vatTotal: formatAmount(invoice.taxAmount),
+    invoiceHash,
+    signatureValue,
+    publicKey: extractRawPublicKey(certificatePem),
+    certificateSignature,
+  });
+
+  return {
+    signedXml,
+    invoiceHash,
+    qrCodeBase64,
+    request: {
+      invoiceHash,
+      uuid: invoice.uuid,
+      invoice: Buffer.from(signedXml).toString('base64'),
+    },
+    submissionType: options.submissionType ?? resolveSubmissionType(invoice),
+  };
+}
+
+/**
+ * Effect twin of {@link submitDocument}: the same Validate → XML → Sign → QR →
+ * Submit → Update-Hash-Chain pipeline, with local failures (bad options,
+ * invalid document data, XML/signing/QR problems) surfaced as
+ * ZatcaValidationError and transport failures as ZatcaConnectionError /
+ * ZatcaTimeoutError / ZatcaApiError.
+ *
+ * The pipeline stays strictly sequential — each stage consumes the previous
+ * one's output — and adds no timeouts or retries of its own.
+ */
+export const submitDocumentEffect = Effect.fn('submitDocumentEffect')(
+  function* (options: SubmitOptions): Effect.fn.Return<SubmitResult, ZatcaEffectError> {
+    const { credentials, apiConfig, hashChainState } = options;
+
+    const prepared = yield* Effect.try({
+      try: () => prepareSubmission(options),
+      catch: toZatcaEffectError,
+    });
+
+    const client = new ZatcaApiClient(apiConfig);
+    const zatcaResult = yield* Effect.tryPromise({
+      try: () =>
+        prepared.submissionType === 'CLEARANCE'
+          ? client.submitForClearance(credentials, prepared.request)
+          : client.submitForReporting(credentials, prepared.request),
+      catch: toZatcaEffectError,
+    });
+
+    let newHashChainState: HashChainState | undefined;
+    if (zatcaResult.success) {
+      newHashChainState = {
+        lastHash: prepared.invoiceHash,
+        lastUuid: options.invoice.uuid,
+        counter: (hashChainState?.counter ?? 0) + 1,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    return {
+      success: zatcaResult.success,
+      signedXml: prepared.signedXml,
+      invoiceHash: prepared.invoiceHash,
+      qrCodeBase64: prepared.qrCodeBase64,
+      zatcaResult,
+      newHashChainState,
+    };
+  },
+);
+
+/** Effect twin of {@link submitInvoice} (same alias relationship). */
+export const submitInvoiceEffect = submitDocumentEffect;
 
 function validateDocument(document: ZatcaDocumentData): void {
   validateInvoice(document);

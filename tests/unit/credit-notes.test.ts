@@ -67,7 +67,7 @@ function submitTestDocument(invoice: ZatcaDocumentData) {
   });
 }
 
-describe('ZATCA credit notes', () => {
+describe('ZATCA credit notes · XML generation', () => {
   test('generates refund credit note XML with ZATCA credit-note code and reason', () => {
     const creditNote = createTestCreditNote({
       invoiceTypeCode: '381',
@@ -98,7 +98,9 @@ describe('ZATCA credit notes', () => {
     expect(xml).not.toContain('<cac:DiscrepancyResponse>');
     expect(xml.indexOf('<cac:PaymentMeans>')).toBeLessThan(xml.indexOf('<cac:TaxTotal>'));
   });
+});
 
+describe('ZATCA credit notes · submission type routing & signing', () => {
   test('routes standard invoices and credit notes by subtype, not by document code', () => {
     expect(
       resolveSubmissionType(
@@ -131,6 +133,30 @@ describe('ZATCA credit notes', () => {
     ).toBe('CLEARANCE');
   });
 
+  test('signs credit notes with invoice-root signature references for ZATCA compatibility', () => {
+    const xml = generateCreditNoteXml(createTestCreditNote());
+    const signed = signInvoice({
+      xml,
+      privateKeyPem: TEST_PRIVATE_KEY,
+      certificatePem: TEST_CERT,
+      qrData: {
+        sellerName: 'شركة اختبار',
+        vatNumber: '300000000000003',
+        timestamp: '2026-01-01T12:00:00',
+        totalWithVat: '4.60',
+        vatTotal: '0.60',
+        certificateSignature: extractCertificateSignature(TEST_CERT),
+      },
+    });
+
+    expect(signed.signedXml).toContain(
+      '<sbc:ReferencedSignatureID>urn:oasis:names:specification:ubl:signature:Invoice</sbc:ReferencedSignatureID>',
+    );
+    expect(signed.signedXml).toContain('<cbc:ID>urn:oasis:names:specification:ubl:signature:Invoice</cbc:ID>');
+  });
+});
+
+describe('ZATCA credit notes · endpoint submission', () => {
   test('submits simplified credit notes to reporting endpoint', async () => {
     const calls = mockZatcaResponse({
       reportingStatus: 'REPORTED',
@@ -155,28 +181,6 @@ describe('ZATCA credit notes', () => {
     expect(result.signedXml).toContain(
       '<sbc:ReferencedSignatureID>urn:oasis:names:specification:ubl:signature:Invoice</sbc:ReferencedSignatureID>',
     );
-  });
-
-  test('signs credit notes with invoice-root signature references for ZATCA compatibility', () => {
-    const xml = generateCreditNoteXml(createTestCreditNote());
-    const signed = signInvoice({
-      xml,
-      privateKeyPem: TEST_PRIVATE_KEY,
-      certificatePem: TEST_CERT,
-      qrData: {
-        sellerName: 'شركة اختبار',
-        vatNumber: '300000000000003',
-        timestamp: '2026-01-01T12:00:00',
-        totalWithVat: '4.60',
-        vatTotal: '0.60',
-        certificateSignature: extractCertificateSignature(TEST_CERT),
-      },
-    });
-
-    expect(signed.signedXml).toContain(
-      '<sbc:ReferencedSignatureID>urn:oasis:names:specification:ubl:signature:Invoice</sbc:ReferencedSignatureID>',
-    );
-    expect(signed.signedXml).toContain('<cbc:ID>urn:oasis:names:specification:ubl:signature:Invoice</cbc:ID>');
   });
 
   test('submits standard tax invoices to clearance endpoint while keeping code 388', async () => {
@@ -207,7 +211,9 @@ describe('ZATCA credit notes', () => {
     expect(calls[0].url).toBe('https://sandbox.example.test/invoices/clearance/single');
     expect(result.signedXml).toContain('<cbc:InvoiceTypeCode name="0100000">388</cbc:InvoiceTypeCode>');
   });
+});
 
+describe('ZATCA credit notes · reporting error alerts', () => {
   test('surfaces ZATCA reporting hard errors as structured alerts', async () => {
     globalThis.fetch = (async () => {
       return new Response(
