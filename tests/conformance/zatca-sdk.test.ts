@@ -36,7 +36,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { generateInvoiceXml, generateCreditNoteXml } from '../../src/xml/index.js';
-import { signInvoice, signInvoiceWithExternalSigner, canonicalizeForHash } from '../../src/signing/index.js';
+import { signInvoice, canonicalizeForHash } from '../../src/signing/index.js';
+import { signWithCsid } from './csid-signer.js';
 import type { SignResult, SignWithExternalSignerParams } from '../../src/signing/index.js';
 import { createTestInvoice, createTestCreditNote } from '../integration/fixtures.js';
 import { TEST_CERT, TEST_PRIVATE_KEY } from './fixtures.js';
@@ -245,61 +246,17 @@ const CERT_SIGNATURE = CSID?.certificateSignature ?? 'MAYCASoCASs=';
  * the external-signer API backed by the openssl CLI — plus pre-extracted
  * certificate info (same reason) and public key.
  */
-function opensslCli(args: string[], opts?: { input?: string | Buffer }): Buffer {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
-  return execFileSync('openssl', args, { input: opts?.input }) as Buffer;
-}
-
-function csidSigningMaterial(): { issuerName: string; serialNumber: string; qrPublicKey: string } {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { mkdtempSync, writeFileSync, rmSync } = require('node:fs') as typeof import('node:fs');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { tmpdir } = require('node:os') as typeof import('node:os');
-  const dir = mkdtempSync(join(tmpdir(), 'csid-material-'));
-  try {
-    const certPath = join(dir, 'cert.pem');
-    writeFileSync(certPath, CSID!.certificatePem);
-    const issuer = opensslCli(['x509', '-in', certPath, '-noout', '-issuer', '-nameopt', 'RFC2253']).toString().replace(/^issuer=/, '').trim();
-    const serialHex = opensslCli(['x509', '-in', certPath, '-noout', '-serial']).toString().replace(/^serial=/i, '').trim();
-    const pemOut = opensslCli(['x509', '-in', certPath, '-noout', '-pubkey']).toString();
-    const qrPublicKey = pemOut.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
-    return { issuerName: issuer, serialNumber: BigInt(`0x${serialHex}`).toString(10), qrPublicKey };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
 async function signWithConfiguredCredentials(
   params: Omit<SignWithExternalSignerParams, 'signer' | 'qrPublicKey' | 'certificateInfo'>,
 ): Promise<SignResult> {
   if (!CSID) {
     return signInvoice({ ...params, privateKeyPem: SIGNING_KEY, certificatePem: SIGNING_CERT });
   }
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { mkdtempSync, writeFileSync, rmSync } = require('node:fs') as typeof import('node:fs');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { tmpdir } = require('node:os') as typeof import('node:os');
-  const material = csidSigningMaterial();
-  const dir = mkdtempSync(join(tmpdir(), 'csid-sign-'));
-  const keyPath = join(dir, 'key.pem');
-  writeFileSync(keyPath, CSID.privateKeyPem);
-  try {
-    return await signInvoiceWithExternalSigner({
-      ...params,
-      certificatePem: CSID.certificatePem,
-      qrPublicKey: material.qrPublicKey,
-      certificateInfo: { issuerName: material.issuerName, serialNumber: material.serialNumber },
-      signer: async (input) => {
-        const inPath = join(dir, 'signedinfo.bin');
-        writeFileSync(inPath, Buffer.from(input.canonicalSignedInfo));
-        const der = opensslCli(['dgst', '-sha256', '-sign', keyPath, inPath]);
-        return { signatureValue: der.toString('base64'), signatureEncoding: 'base64_der' as const };
-      },
-    });
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  return signWithCsid(params, {
+    certificatePem: CSID.certificatePem,
+    privateKeyPem: CSID.privateKeyPem,
+    certificateSignature: CSID.certificateSignature,
+  });
 }
 
 async function generateSignedInvoiceXml(): Promise<string> {
@@ -316,10 +273,12 @@ async function generateSignedInvoiceXml(): Promise<string> {
       // enforces equality) — the XML builder emits the Arabic name.
       sellerName: invoice.supplier.nameAr,
       vatNumber: invoice.supplier.vatNumber,
-      // Official sample QRs carry the timestamp WITHOUT a trailing Z,
-      // matching the Z-less cbc:IssueTime — but the SDK 3.0.8 QR-stage
-      // comparison empirically expects the Z (see signForConformance note).
-      timestamp: `${invoice.issueDate}T${invoice.issueTime.replace(/Z$/, '')}Z`,
+      // Tag 3 MUST equal cbc:IssueDate + 'T' + cbc:IssueTime verbatim: the
+      // live gateway's QRCODE_VALIDATION warns (invoiceTimeStamp_QRCODE_INVALID)
+      // on any deviation, including a trailing Z. (SDK 3.0.8's QR stage
+      // prefers the Z form, but the gateway is the production authority and
+      // the official samples are Z-less.)
+      timestamp: `${invoice.issueDate}T${invoice.issueTime.replace(/Z$/, '')}`,
       totalWithVat: formatAmount(invoice.payableAmount),
       vatTotal: formatAmount(invoice.taxAmount),
       // Tag 9 is the ZATCA CA's DER ECDSA signature over the CSID cert —
@@ -428,11 +387,12 @@ async function signForConformance(
     qrData: {
       sellerName: ARABIC_SELLER_NAME,
       vatNumber: SELLER_VAT_NUMBER,
-      // Empirical (SDK 3.0.8): the QR-stage timestamp comparison expects the
-      // trailing Z (ISO instant form) — a Z-less tag 3 is reported as a
-      // timeStamp mismatch even though the official 3.3.3-era samples are
-      // Z-less (their QR stage never ran — they fail current KSA rules).
-      timestamp: `${doc.issueDate}T${doc.issueTime.replace(/Z$/, '')}Z`,
+      // Tag 3 MUST equal cbc:IssueDate + 'T' + cbc:IssueTime verbatim —
+      // the live gateway warns (invoiceTimeStamp_QRCODE_INVALID) on any
+      // deviation including a trailing Z. Official samples are Z-less;
+      // the SDK 3.0.8 QR stage disagrees (see deviation guard), but the
+      // gateway is the production authority.
+      timestamp: `${doc.issueDate}T${doc.issueTime.replace(/Z$/, '')}`,
       totalWithVat: formatAmount(doc.payableAmount),
       vatTotal: formatAmount(doc.taxAmount),
       certificateSignature: CERT_SIGNATURE,
