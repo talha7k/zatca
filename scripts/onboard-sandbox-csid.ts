@@ -14,8 +14,23 @@
  *   5. persist the CSID material to `.zatca-csid.json` (gitignored) in the
  *      shape the conformance harness consumes
  *
- * THE OTP IS THE ONLY MANUAL STEP: log in to the Fatoora developer portal
- * (Simulation portal → Onboard a solution unit → generate OTP), then:
+ * THE OTP IS THE ONLY MANUAL STEP (verified against the official Fatoora
+ * Portal User Manual + Developer Portal Manual, 2026-08 Qeemah walkthrough):
+ *   1. Log in at https://fatoora.zatca.gov.sa with ERAD taxpayer credentials
+ *      (TIN or registered ZATCA email — NOT Developer Portal credentials).
+ *   2. Switch to the sandbox: click "FATOORA Portal Simulation" (top right).
+ *      Production and Simulation are independent environments.
+ *   3. Click "Onboard new solution unit/device", enter the OTP count
+ *      (1–100 per batch), complete the reCAPTCHA, click "Generate OTP Code".
+ *   4. Copy a 6-digit code (or export the file) and feed it to this script
+ *      as --otp WITHIN 1 HOUR — OTPs expire after 60 minutes.
+ *   VAT numbers in the Sandbox may be dummy values (15 digits, 3…3); every
+ *   invoice/QR submitted with the resulting CSID must carry the SAME VAT.
+ *
+ * CSR profile note: this script generates the CSR with the environment-aware
+ * template this library already implements (sandbox & production →
+ * 'ZATCA-Code-Signing', simulation → 'PREZATCA-Code-Signing' per the OID
+ * 1.3.6.1.4.1.311.20.2 certificateTemplateName convention).
  *
  *   bun scripts/onboard-sandbox-csid.ts --otp <OTP> --vat 310000000000003 [options]
  *
