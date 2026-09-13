@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+.DS_Store
+sdk/
+*.log
+tests/integration/debug-*
+config.bat
+
+# env files (never commit — 0.11.1 incident)
+.env
+.env.*

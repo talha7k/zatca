@@ -1,0 +1,103 @@
+{
+  "name": "@talha7k/zatca",
+  "version": "0.11.1",
+  "description": "ZATCA Phase 2 e-invoicing integration for Saudi Arabia \u2014 TypeScript, framework-agnostic, production-grade",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./qrcode": {
+      "types": "./dist/qrcode/index.d.ts",
+      "import": "./dist/qrcode/index.js",
+      "require": "./dist/qrcode/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "type-check": "tsc --noEmit",
+    "test": "bun test",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@talha7k/zatca-qr": "^1.2.2",
+    "@xmldom/xmldom": "^0.9.10",
+    "dotenv": "^8.2.0",
+    "node-fetch": "^3.3.2",
+    "xml-crypto": "^6.1.2",
+    "xmldsigjs": "^2.8.7"
+  },
+  "devDependencies": {
+    "@types/node": "^25.7.0",
+    "fast-xml-parser": "^5.8.0",
+    "typescript": "^6.0.3"
+  },
+  "peerDependencies": {
+    "qrcode": "^1.5.0 || ^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "qrcode": {
+      "optional": true
+    }
+  },
+  "overrides": {
+    "fast-xml-builder": "1.2.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "fast-xml-builder": "1.2.0"
+    }
+  },
+  "files": [
+    "dist/"
+  ],
+  "keywords": [
+    "zatca",
+    "zatca-phase2",
+    "e-invoicing",
+    "saudi-arabia",
+    "fatoora",
+    "ubl",
+    "ubl21",
+    "vat",
+    "saudi",
+    "invoice",
+    "qr-code",
+    "digital-signature",
+    "ecdsa",
+    "tax",
+    "typescript",
+    "phase1",
+    "phase2",
+    "xml-dsig",
+    "ber-tlv"
+  ],
+  "author": {
+    "name": "talha7k",
+    "email": "talha7k@gmail.com",
+    "url": "https://github.com/talha7k"
+  },
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/talha7k/zatca-phase2.git"
+  },
+  "bugs": {
+    "url": "https://github.com/talha7k/zatca-phase2/issues"
+  },
+  "homepage": "https://github.com/talha7k/zatca-phase2#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/talha7k"
+  }
+}
