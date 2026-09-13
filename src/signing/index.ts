@@ -1,10 +1,14 @@
 export {
   signInvoice,
+  signInvoiceEffect,
   signInvoiceWithExternalSigner,
   signInvoiceWithExternalSignerEffect,
   computeInvoiceHash,
+  computeInvoiceHashEffect,
   canonicalizeForHash,
+  canonicalizeForHashEffect,
   verifySignature,
+  verifySignatureEffect,
 } from './sign.js';
 export type {
   SignParams,

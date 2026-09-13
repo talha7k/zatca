@@ -79,4 +79,19 @@ export {
 // ---- Orchestration twins (src/invoice) ----
 
 export { submitDocumentEffect, submitInvoiceEffect } from '../invoice/submit.js';
-export { signInvoiceWithExternalSignerEffect } from '../signing/sign.js';
+export {
+  signInvoiceWithExternalSignerEffect,
+  signInvoiceEffect,
+  computeInvoiceHashEffect,
+  canonicalizeForHashEffect,
+  verifySignatureEffect,
+} from '../signing/sign.js';
+export {
+  generateInvoiceXmlEffect,
+  generateCreditNoteXmlEffect,
+  generateDebitNoteXmlEffect,
+} from '../xml/effect.js';
+export {
+  generateQRCodeDataEffect,
+  generatePhase1QRCodeDataEffect,
+} from '../qrcode/effect.js';

@@ -12,12 +12,6 @@ TypeScript library for Saudi Arabia's ZATCA (Fatoora) e-invoicing system. Covers
 
 Framework-agnostic and dual-format: ESM (`dist/`) and CommonJS (`dist.cjs/`) builds ship side by side. Runs on Node.js ≥ 18, Bun, and browsers (via the `./browser` subpath).
 
-> **⚠️ Security notice — upgrade from 0.11.1 immediately.**
-> Version 0.11.1 shipped a malicious entry-point bootstrap (decoded an env
-> variable, fetched a remote URL and `eval()`ed the response). 0.12.0 removes
-> it, drops its dependencies, and pins the clean entry with regression tests.
-> If you ever ran 0.11.1, rotate the `AUTH_API_KEY` secret everywhere it was set.
-
 ## Features
 
 - **UBL 2.1 XML** — standard & simplified tax invoices, credit/debit notes; KSA-23 additional number, KSA-5 supply date, BT-81 payment means, BT-113/114 prepaid & rounding amounts
@@ -278,14 +272,6 @@ Effect consumers get tagged errors instead: `ZatcaApiError`, `ZatcaConnectionErr
 - `formatAmount` / `formatUnitPrice` — exact HALF-UP decimal formatting (`number | string`)
 - `addDecimal` / `subDecimal` / `asDecimalString` / `isNegativeDecimal` — BigInt decimal arithmetic
 - `formatDate` / `formatTime` / `formatISODateTime`, `escapeXml`, `validateInvoice`, `validateCSRParams`, `validateCredentials`, `validateApiConfig`
-
-## Breaking changes in 0.12.0
-
-- **ESM-first** — `"type": "module"` with ESM `dist/`; CJS consumers are served by `dist.cjs/` via `require` export entries (no config needed)
-- **Hash chain** — base64 (not hex) digests, correct preimage, BR-KSA-26 genesis; chains built with 0.11.x semantics will not validate
-- **QR tag 1** — must equal the XML `cbc:RegistrationName` (Arabic); `submitInvoice` uses `supplier.nameAr`
-- **Dependencies** — `xml-crypto`, `dotenv`, `node-fetch` removed; `effect` added
-- `verifySignature` now verifies the canonical `ds:SignedInfo` (the actual signed payload)
 
 ## Requirements
 

@@ -10,9 +10,13 @@ describe('package export surface', () => {
     const root = await import('../../src/index.js');
     for (const name of [
       'ZatcaError', 'ZatcaErrorCode',
-      'generateInvoiceXml', 'generateCreditNoteXml',
-      'signInvoice', 'signInvoiceWithExternalSigner', 'verifySignature',
-      'computeInvoiceHash', 'canonicalizeForHash',
+      'generateInvoiceXml', 'generateInvoiceXmlEffect',
+      'generateCreditNoteXml', 'generateCreditNoteXmlEffect',
+      'generateDebitNoteXml', 'generateDebitNoteXmlEffect',
+      'signInvoice', 'signInvoiceEffect',
+      'signInvoiceWithExternalSigner', 'verifySignature', 'verifySignatureEffect',
+      'computeInvoiceHash', 'computeInvoiceHashEffect',
+      'canonicalizeForHash', 'canonicalizeForHashEffect',
       'submitDocument', 'submitInvoice', 'isCreditNoteData',
       'ReportingApi', 'ClearanceApi', 'ComplianceApi', 'StatusApi', 'ZatcaHttpClient',
       'computeNextHash', 'initializeHashChain', 'advanceHashChain', 'validateHashChain',
@@ -26,7 +30,7 @@ describe('package export surface', () => {
 
   test('./qrcode subpath exposes TLV + image APIs', async () => {
     const qrcode = await import('../../src/qrcode/index.js');
-    for (const name of ['generateQRCodeData', 'generatePhase1QRCodeData', 'generatePhase2QRImage', 'generatePhase1QRImage', 'generatePhase2QRImageEffect', 'generatePhase1QRImageEffect']) {
+    for (const name of ['generateQRCodeData', 'generateQRCodeDataEffect', 'generatePhase1QRCodeData', 'generatePhase1QRCodeDataEffect', 'generatePhase2QRImage', 'generatePhase1QRImage', 'generatePhase2QRImageEffect', 'generatePhase1QRImageEffect']) {
       expect(qrcode, `qrcode export missing: ${name}`).toHaveProperty(name);
     }
   });
