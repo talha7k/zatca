@@ -127,8 +127,10 @@ if (dryRun) {
 
 console.log('==> [2/4] requesting compliance CSID (OTP auth)');
 const compliance = await client.requestComplianceCSID(csrBase64, otp);
-if (!('ACCEPTED' in String(compliance.status ?? '')) && !compliance.binarySecurityToken) {
-  console.error('Compliance CSID rejected:', JSON.stringify(compliance).slice(0, 400));
+const complianceAccepted = compliance.status === 'ACCEPTED' || Boolean(compliance.binarySecurityToken);
+if (!complianceAccepted) {
+  console.error('Compliance CSID rejected. Full response:');
+  console.error(JSON.stringify(compliance, null, 2).slice(0, 2000));
   process.exit(1);
 }
 const complianceCreds = { binarySecurityToken: compliance.binarySecurityToken, secret: compliance.secret };
