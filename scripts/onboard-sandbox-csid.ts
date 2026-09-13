@@ -35,7 +35,10 @@
  *   bun scripts/onboard-sandbox-csid.ts --otp <OTP> --vat 310000000000003 [options]
  *
  *   Options:
- *     --otp <code>            OTP from the Fatoora portal (required for live mode)
+ *     --otp <code>            OTP from the Fatoora portal (required for live mode).
+ *                             Tip: the developer-portal SANDBOX accepts the
+ *                             well-known dummy OTP `12345` (no portal login
+ *                             needed — that is what the conformance suite uses).
  *     --vat <trn>             15-digit VAT number (required)
  *     --name-en/--name-ar     organization names (default: Sandbox Test Co / شركة الاختبار التجريبية)
  *     --common-name <cn>      EGS common name (default: TST-<vat>-SANDBOX01)
@@ -52,6 +55,7 @@ import { join } from 'node:path';
 import {
   generateCSR,
   extractCertificateSignature,
+  decodeTokenToPem,
   ZatcaApiClient,
   buildComplianceInvoiceXml,
   signComplianceInvoice,
@@ -108,12 +112,13 @@ const csrResult = generateCSR({
   egsSerialNumber: `TST|SANDBOX|${vat}01`,
 }, portal === 'simulation' ? 'simulation' : 'sandbox');
 const { privateKey } = csrResult;
-const csrBase64 = Buffer.from(csrResult.csr).toString('base64');
+// requestComplianceCSID base64-encodes the PEM itself — keep it raw.
+const csrPem = csrResult.csr;
 console.log(`    CSR: ${csrResult.csr.length} chars PEM (CN=${flag('--common-name') ?? `TST-${vat}-SANDBOX01`})`);
 
 if (dryRun) {
   console.log('\n[DRY RUN] no network calls made. With an OTP the script would:');
-  console.log(`  1. POST ${baseUrl}/compliance  {"csr": "<${csrBase64.length} chars>"}  + header OTP: <code>`);
+  console.log(`  1. POST ${baseUrl}/compliance  {"csr": base64(<${csrPem.length} chars PEM>)}  + header OTP: <code>`);
   console.log('  2. sign one document per check type with the compliance CSID and POST /compliance/invoices');
   console.log('  3. POST /production/csids  {"compliance_request_id": "<id>"}');
   console.log(`  4. write ${outPath}  {certificatePem, privateKeyPem, certificateSignature}`);
@@ -126,7 +131,7 @@ if (dryRun) {
 // ---------------------------------------------------------------------------
 
 console.log('==> [2/4] requesting compliance CSID (OTP auth)');
-const compliance = await client.requestComplianceCSID(csrBase64, otp);
+const compliance = await client.requestComplianceCSID(csrPem, otp);
 const complianceAccepted = compliance.status === 'ACCEPTED' || Boolean(compliance.binarySecurityToken);
 if (!complianceAccepted) {
   console.error('Compliance CSID rejected. Full response:');
@@ -189,12 +194,7 @@ else console.log('    secrets NOT printed (pass --show to display). Re-run the c
 // ---------------------------------------------------------------------------
 
 function decodeCert(binarySecurityToken: string): string {
-  const der = Buffer.from(binarySecurityToken, 'base64').toString('utf8');
-  if (der.includes('BEGIN CERTIFICATE')) return der;
-  // Some responses wrap the PEM in JSON — extract the first PEM block.
-  const m = der.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/);
-  if (!m) throw new Error('compliance/production response did not contain a PEM certificate');
-  return m[0];
+  return decodeTokenToPem(binarySecurityToken);
 }
 
 function complianceSupplier() {

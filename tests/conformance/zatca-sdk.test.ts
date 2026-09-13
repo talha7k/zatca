@@ -39,6 +39,7 @@ import { generateInvoiceXml, generateCreditNoteXml } from '../../src/xml/index.j
 import { signInvoice, signInvoiceWithExternalSigner, canonicalizeForHash } from '../../src/signing/index.js';
 import type { SignResult, SignWithExternalSignerParams } from '../../src/signing/index.js';
 import { createTestInvoice, createTestCreditNote } from '../integration/fixtures.js';
+import { TEST_CERT, TEST_PRIVATE_KEY } from './fixtures.js';
 import { formatAmount } from '../../src/utils/xml.js';
 import { parseValidationReport } from './validation-report.js';
 import type { ParsedValidationReport } from './validation-report.js';
@@ -189,25 +190,6 @@ function conformanceInvoice(overrides?: Partial<ReturnType<typeof sampleInvoice>
     },
   };
 }
-
-// Static test certificate/key (same pair as tests/unit/credit-notes.test.ts).
-const TEST_PRIVATE_KEY = `-----BEGIN EC PRIVATE KEY-----
-MHcCAQEEIJMvO+IgiLq3YBJaSp7Gz1a7786pQ/u9ZPauVY54NQZ6oAoGCCqGSM49
-AwEHoUQDQgAEz3vRHcXK1dgFsLqXdbNzSETiEIuC6rFmpmN697nECxPtRDR5vNC2
-GhPoO6rtwp4+BttdIhIWo8HSMSYGsfiipA==
------END EC PRIVATE KEY-----`;
-
-
-const TEST_CERT = `-----BEGIN CERTIFICATE-----
-MIIBdzCCAR2gAwIBAgIUaumRZCMc9o3ZxLuAISSXffuresEwCgYIKoZIzj0EAwIw
-ETEPMA0GA1UEAwwGdGVzdGNhMB4XDTI2MDUwMTExMjg1NloXDTI3MDUwMTExMjg1
-NlowETEPMA0GA1UEAwwGdGVzdGNhMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE
-z3vRHcXK1dgFsLqXdbNzSETiEIuC6rFmpmN697nECxPtRDR5vNC2GhPoO6rtwp4+
-BttdIhIWo8HSMSYGsfiipKNTMFEwHQYDVR0OBBYEFDpE5pXNp2qWghXpkJavkHIb
-uDU+MB8GA1UdIwQYMBaAFDpE5pXNp2qWghXpkJavkHIbuDU+MA8GA1UdEwEB/wQF
-MAMBAf8wCgYIKoZIzj0EAwIDSAAwRQIhAP2Okl6ZMxD8xABvIDDUBycGcZNqUl0o
-pBLnzUm2S9AiAiBLlAutK/rCJOb6EkHHaMYHgQREBZdiLhlf6NR1WMYGBA==
------END CERTIFICATE-----`;
 
 /**
  * Optional REAL sandbox CSID fixture — the missing piece for the QR
