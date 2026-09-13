@@ -9,6 +9,8 @@ export {
   isCertificateExpiringSoon,
   encryptPrivateKey,
   decryptPrivateKey,
+  generateCSREffect,
+  generateECDSAKeyPairEffect,
 } from './generate.js';
 
 export type { CertificateInfo } from './generate.js';

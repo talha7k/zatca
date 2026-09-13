@@ -11,3 +11,13 @@ config.bat
 # env files (never commit — 0.11.1 incident)
 .env
 .env.*
+
+# SDK conformance harness temp files
+.tmp-sdk-conformance/
+
+# CJS companion build output
+dist.cjs/
+
+# Local working notes (never committed)
+/plan.md
+/.zatca-csid.json

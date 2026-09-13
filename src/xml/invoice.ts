@@ -68,6 +68,17 @@ function buildInvoiceXml(invoice: InvoiceData): string {
     ? `\n${xmlCustomerParty(invoice.customer)}`
     : `\n  <cac:AccountingCustomerParty>\n  </cac:AccountingCustomerParty>`;
 
+  // KSA-5 supply date — BR-KSA-15 requires cac:Delivery/cbc:ActualDeliveryDate
+  // on standard (B2B) tax invoices (KSA-2 first two digits "01").
+  const deliveryBlock = invoice.supplyDate
+    ? `\n  <cac:Delivery>\n    <cbc:ActualDeliveryDate>${escapeXml(invoice.supplyDate)}</cbc:ActualDeliveryDate>\n  </cac:Delivery>`
+    : '';
+
+  // BT-81 — BR-KSA-16 requires PaymentMeans on standard (B2B) invoices.
+  const paymentMeansBlock = invoice.paymentMeansCode
+    ? `\n  <cac:PaymentMeans>\n    <cbc:PaymentMeansCode>${invoice.paymentMeansCode}</cbc:PaymentMeansCode>\n  </cac:PaymentMeans>`
+    : '';
+
   const invoiceLineBlocks = invoice.invoiceLines
     .map((line) => xmlInvoiceLine(line, invoice.currencyCode))
     .join('\n');
@@ -89,7 +100,7 @@ ${xmlUBLExtensions()}
   <cbc:TaxCurrencyCode>${escapeXml(invoice.currencyCode)}</cbc:TaxCurrencyCode>
 ${additionalDocsBlock}${xmlSignature()}
 
-${xmlSupplierParty(invoice.supplier)}${customerBlock}
+${xmlSupplierParty(invoice.supplier)}${customerBlock}${deliveryBlock}${paymentMeansBlock}
 
 ${xmlAllowanceCharges(invoice)}
 

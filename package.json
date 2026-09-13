@@ -1,43 +1,66 @@
 {
   "name": "@talha7k/zatca",
-  "version": "0.11.1",
-  "description": "ZATCA Phase 2 e-invoicing integration for Saudi Arabia \u2014 TypeScript, framework-agnostic, production-grade",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "version": "0.12.0",
+  "description": "ZATCA Phase 2 e-invoicing integration for Saudi Arabia — TypeScript, framework-agnostic, production-grade",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "require": "./dist/index.js"
+      "require": "./dist.cjs/index.cjs"
     },
     "./qrcode": {
       "types": "./dist/qrcode/index.d.ts",
       "import": "./dist/qrcode/index.js",
-      "require": "./dist/qrcode/index.js"
+      "require": "./dist.cjs/qrcode/index.cjs"
+    },
+    "./signing/p1363-to-der": {
+      "types": "./dist/signing/p1363-to-der.d.ts",
+      "import": "./dist/signing/p1363-to-der.js",
+      "require": "./dist.cjs/signing/p1363-to-der.cjs"
+    },
+    "./hash-chain": {
+      "types": "./dist/hash-chain/index.d.ts",
+      "import": "./dist/hash-chain/index.js",
+      "require": "./dist.cjs/hash-chain/index.cjs"
+    },
+    "./browser": {
+      "types": "./dist/browser/index.d.ts",
+      "import": "./dist/browser/index.js",
+      "require": "./dist.cjs/browser/index.cjs"
+    },
+    "./effect": {
+      "types": "./dist/effect/index.d.ts",
+      "import": "./dist/effect/index.js",
+      "require": "./dist.cjs/effect/index.cjs"
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && tsup",
     "dev": "tsc --watch",
     "type-check": "tsc --noEmit",
     "test": "bun test",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "build:cjs": "tsup"
   },
   "dependencies": {
     "@talha7k/zatca-qr": "^1.2.2",
-    "@xmldom/xmldom": "^0.9.10",
-    "dotenv": "^8.2.0",
-    "node-fetch": "^3.3.2",
-    "xml-crypto": "^6.1.2",
-    "xmldsigjs": "^2.8.7"
+    "@xmldom/xmldom": "^0.9.12",
+    "effect": "4.0.0-rc.115",
+    "xmldsigjs": "^2.8.8"
   },
   "devDependencies": {
-    "@types/node": "^25.7.0",
-    "fast-xml-parser": "^5.8.0",
-    "typescript": "^6.0.3"
+    "@types/node": "^26.5.1",
+    "@types/qrcode": "^1.5.6",
+    "fast-xml-parser": "^5.11.1",
+    "qrcode": "^1.5.0 || ^2.0.0",
+    "tsup": "^8.5.1",
+    "typescript": "^7.0.2"
   },
   "peerDependencies": {
     "qrcode": "^1.5.0 || ^2.0.0"
@@ -56,11 +79,11 @@
     }
   },
   "files": [
-    "dist/"
+    "dist/",
+    "dist.cjs/"
   ],
   "keywords": [
     "zatca",
-    "zatca-phase2",
     "e-invoicing",
     "saudi-arabia",
     "fatoora",
@@ -87,12 +110,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/talha7k/zatca-phase2.git"
+    "url": "git+https://github.com/talha7k/zatca.git"
   },
   "bugs": {
-    "url": "https://github.com/talha7k/zatca-phase2/issues"
+    "url": "https://github.com/talha7k/zatca/issues"
   },
-  "homepage": "https://github.com/talha7k/zatca-phase2#readme",
+  "homepage": "https://github.com/talha7k/zatca#readme",
   "engines": {
     "node": ">=18.0.0"
   },

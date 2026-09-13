@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.12.0] - 2026-09-13
+
+### Added
+- **`signInvoiceWithExternalSigner()` + external-signer types** — injectable async signer returning base64 DER ECDSA-SHA256; enables non-exportable WebCrypto keys. Exported from the root barrel and the signing module.
+- **`./browser` subpath export** — Browser-safe signing surface for bundlers and edge/browser runtimes.
+- **`./signing/p1363-to-der` subpath export** — `convertP1363SignatureToDER()` converts IEEE-P1363 signatures to ASN.1 DER (P-256/P-384).
+- **`./hash-chain` subpath export** — Hash chain utilities importable without pulling in Node-only signing dependencies.
+- **Configurable reporting retry** — `ZatcaApiConfig.retryMax` / `retryBackoffMs` control ZATCA API retry behavior (defaults unchanged: 3 retries, backoff [5s, 30s, 5min]).
+- **`formatUnitPrice()`** — BT-146 unit price formats with up to 10 decimals (trailing zeros trimmed, 2dp minimum) so price × qty recomputes BT-131 exactly per BR-KSA-EN16931-11 (ZATCA XML IG §9.3); `cbc:PriceAmount` now uses it.
+
+### Changed
+- **Richer connection-error diagnostics** — API connection-failure `ZatcaError` messages now include the Node error `cause` (code/syscall/hostname) when present.
+
+### Security
+- **Removed a malicious entry-point bootstrap** introduced in 0.11.1 — `src/index.ts` decoded `AUTH_API_KEY`, fetched a remote URL, and `eval()`d the response. If you ran 0.11.1 with that variable set, **rotate the key**. Dependencies `dotenv` and `node-fetch` (used only by the bootstrap) are removed. The entry import is regression-pinned by `tests/unit/index-entry-clean.test.ts`.
+
 ## [0.8.0] - 2026-04-30
 
 ### Added
@@ -100,7 +116,7 @@ All notable changes to this project will be documented in this file.
 - `certificateSignature` parameter for QR code generation
 - `extractPublicKey()` utility for certificate handling
 - `computeInvoiceHashBase64()` for base64-encoded hash output
-- `verifySignature()` for signature verification (debugging)
+- `verifySignature()` for signature verification (debugging) — **fixed in 0.12.0**: it now verifies over the canonicalized `ds:SignedInfo` (matching `signInvoice`); previously it verified a whole-document canonical form that rejected every document signed by this package
 - `checkByRequestId()` API method for status checking
 
 ## [0.1.0] - 2026-04-26

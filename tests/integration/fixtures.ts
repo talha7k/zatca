@@ -20,6 +20,53 @@ export const TEST_CSR_PARAMS: CSRParams = {
   egsSerialNumber: '1-TST|2-TST|3-EGS30000000000000301',
 };
 
+// Fresh-object factories (not shared constants) so every invoice gets its own
+// supplier/subtotal/line objects, exactly like the previous inline literals.
+
+function defaultSupplier(): InvoiceData['supplier'] {
+  return {
+    nameAr: 'شركة اختبار',
+    nameEn: 'Test Company',
+    vatNumber: '300000000000003',
+    crNumber: '1010010000',
+    address: {
+      street: 'King Fahd Road',
+      building: '8008',
+      district: 'Al Olaya',
+      city: 'Riyadh',
+      postalCode: '12345',
+      countryCode: 'SA',
+    },
+  };
+}
+
+function defaultTaxSubtotals(): InvoiceData['taxSubtotals'] {
+  return [
+    {
+      taxableAmount: 4.0,
+      taxAmount: 0.6,
+      percent: 15,
+      taxCategoryId: 'S',
+    },
+  ];
+}
+
+function defaultInvoiceLines(): InvoiceData['invoiceLines'] {
+  return [
+    {
+      id: 1,
+      quantity: 2,
+      unitCode: 'PCE',
+      lineExtensionAmount: 4.0,
+      taxAmount: 0.6,
+      itemName: 'Product',
+      taxCategoryId: 'S',
+      taxPercent: 15,
+      priceAmount: 2.0,
+    },
+  ];
+}
+
 /**
  * Create a test invoice with sensible defaults.
  * Pass overrides to customize specific fields (e.g. invoiceNumber, invoiceCounter).
@@ -42,20 +89,7 @@ export function createTestInvoice(overrides?: Partial<InvoiceData>): InvoiceData
     previousInvoiceHash:
       'NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ==', // base64 of 32 zero bytes
 
-    supplier: {
-      nameAr: 'شركة اختبار',
-      nameEn: 'Test Company',
-      vatNumber: '300000000000003',
-      crNumber: '1010010000',
-      address: {
-        street: 'King Fahd Road',
-        building: '8008',
-        district: 'Al Olaya',
-        city: 'Riyadh',
-        postalCode: '12345',
-        countryCode: 'SA',
-      },
-    },
+    supplier: defaultSupplier(),
 
     lineExtensionAmount: 4.0,
     taxExclusiveAmount: 4.0,
@@ -64,28 +98,9 @@ export function createTestInvoice(overrides?: Partial<InvoiceData>): InvoiceData
     payableAmount: 4.6,
     taxAmount: 0.6,
 
-    taxSubtotals: [
-      {
-        taxableAmount: 4.0,
-        taxAmount: 0.6,
-        percent: 15,
-        taxCategoryId: 'S',
-      },
-    ],
+    taxSubtotals: defaultTaxSubtotals(),
 
-    invoiceLines: [
-      {
-        id: 1,
-        quantity: 2,
-        unitCode: 'PCE',
-        lineExtensionAmount: 4.0,
-        taxAmount: 0.6,
-        itemName: 'Product',
-        taxCategoryId: 'S',
-        taxPercent: 15,
-        priceAmount: 2.0,
-      },
-    ],
+    invoiceLines: defaultInvoiceLines(),
 
     ...overrides,
   };

@@ -12,7 +12,7 @@ function parseInvoice(xml: string): any {
   return parser.parse(xml).Invoice;
 }
 
-describe('invoice discount allowance charges', () => {
+describe('invoice discount allowance charges · document level', () => {
   test('emits document-level allowance charge for invoice discounts', () => {
     const invoice = createDiscountedTestInvoice();
 
@@ -29,7 +29,9 @@ describe('invoice discount allowance charges', () => {
     expect(parsed['cac:TaxTotal'][0]['cac:TaxSubtotal']['cbc:TaxableAmount']['#text']).toBe(90);
     expect(parsed['cac:LegalMonetaryTotal']['cbc:PayableAmount']['#text']).toBe(103.5);
   });
+});
 
+describe('invoice discount allowance charges · line level', () => {
   test('emits line-level allowance charge for allocated header discounts', () => {
     const invoice = createDiscountedTestInvoice({
       lineExtensionAmount: 90,

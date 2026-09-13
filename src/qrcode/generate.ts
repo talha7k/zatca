@@ -23,7 +23,7 @@ export function generateQRCodeData(data: Phase2QRData): string {
       vatNumber: data.vatNumber,
       timestamp: data.timestamp,
       totalWithVat: data.totalWithVat,
-      vatTotal: data.vatTotal,
+      vatTotal: data.vatTotal || '0.00',
       invoiceHash: data.invoiceHash,
       signatureValue: data.ecdsaSignature,
       publicKey: data.ecdsaPublicKey,
@@ -43,7 +43,7 @@ export function generateQRCodeData(data: Phase2QRData): string {
  */
 export function generatePhase1QRCodeData(data: Phase1QRData): string {
   try {
-    return generatePhase1TLV(data);
+    return generatePhase1TLV({ ...data, vatTotal: data.vatTotal || '0.00' });
   } catch (error) {
     throw new ZatcaError(
       `Failed to generate Phase 1 QR data: ${(error as Error).message}`,

@@ -1,89 +1,180 @@
 /**
  * Validation utilities for ZATCA invoice and certificate data
+ *
+ * Each exported validator aggregates the results of small, single-section
+ * pure helpers. The helpers return their findings as message arrays so the
+ * original error semantics are preserved exactly: one ZatcaError per
+ * validator, messages joined with "; ", in stable check order.
  */
 
 import { ZatcaError, ZatcaErrorCode } from '../errors.js';
-import type { InvoiceData, CSRParams, ZatcaCredentials, ZatcaApiConfig } from '../types.js';
+import { isNegative } from './money.js';
+import type { AllowanceCharge, InvoiceData, CSRParams, ZatcaCredentials, ZatcaApiConfig } from '../types.js';
+
+// ============================================================
+// Shared aggregation
+// ============================================================
 
 /**
- * Validate invoice data before XML generation or submission
+ * Throw the aggregated validation error for a validation scope.
+ *
+ * Message format: `<scope> validation failed: <error 1>; <error 2>; ...`
+ * with the individual messages also exposed via `details.errors`.
  */
-export function validateInvoice(invoice: InvoiceData): void {
-  const errors: string[] = [];
+function throwValidationErrors(scope: string, errors: string[]): never {
+  throw new ZatcaError(
+    `${scope} validation failed: ${errors.join('; ')}`,
+    ZatcaErrorCode.VALIDATION_ERROR,
+    { errors },
+  );
+}
 
+/** Errors for a list of allowance charges, using the given message prefix. */
+function allowanceChargeErrors(charges: AllowanceCharge[] | undefined, errorPrefix: string): string[] {
+  const errors: string[] = [];
+  for (const charge of charges ?? []) {
+    if (!charge.reason) errors.push(`${errorPrefix}.reason is required`);
+    if (charge.amount != null && isNegative(charge.amount)) errors.push(`${errorPrefix}.amount must be non-negative`);
+  }
+  return errors;
+}
+
+// ============================================================
+// Invoice section validators (order defines error order)
+// ============================================================
+
+/** Required identification fields: number, uuid, dates, type and currency codes. */
+function requiredHeaderFieldErrors(invoice: InvoiceData): string[] {
+  const errors: string[] = [];
   if (!invoice.invoiceNumber) errors.push('invoiceNumber is required');
   if (!invoice.uuid) errors.push('uuid is required');
   if (!invoice.issueDate) errors.push('issueDate is required');
   if (!invoice.issueTime) errors.push('issueTime is required');
   if (!invoice.invoiceTypeCode) errors.push('invoiceTypeCode is required');
   if (!invoice.currencyCode) errors.push('currencyCode is required');
+  return errors;
+}
 
-  // Supplier validation
+/** The ZATCA supplier VAT number is exactly 15 digits (only checked when present). */
+function vatNumberFormatErrors(vatNumber: string | undefined): string[] {
+  const errors: string[] = [];
+  if (vatNumber && vatNumber.length !== 15) {
+    errors.push('supplier.vatNumber must be 15 digits');
+  }
+  return errors;
+}
+
+/** Required supplier identity fields, plus the 15-digit VAT check. */
+function supplierIdentityErrors(invoice: InvoiceData): string[] {
+  const errors: string[] = [];
   if (!invoice.supplier?.nameAr) errors.push('supplier.nameAr is required');
   if (!invoice.supplier?.nameEn) errors.push('supplier.nameEn is required');
   if (!invoice.supplier?.vatNumber) errors.push('supplier.vatNumber is required');
-  if (invoice.supplier?.vatNumber && invoice.supplier.vatNumber.length !== 15) {
-    errors.push('supplier.vatNumber must be 15 digits');
+  errors.push(...vatNumberFormatErrors(invoice.supplier?.vatNumber));
+  return errors;
+}
+
+const REQUIRED_ADDRESS_FIELDS = ['city', 'street', 'postalCode'] as const;
+
+/** Required supplier address fields. */
+function supplierAddressErrors(invoice: InvoiceData): string[] {
+  const errors: string[] = [];
+  for (const field of REQUIRED_ADDRESS_FIELDS) {
+    if (!invoice.supplier?.address?.[field]) errors.push(`supplier.address.${field} is required`);
   }
+  return errors;
+}
 
-  // Address validation
-  if (!invoice.supplier?.address?.city) errors.push('supplier.address.city is required');
-  if (!invoice.supplier?.address?.street) errors.push('supplier.address.street is required');
-  if (!invoice.supplier?.address?.postalCode) errors.push('supplier.address.postalCode is required');
+/** Required totals, then non-negative totals and invoice-level allowance charges. */
+function amountErrors(invoice: InvoiceData): string[] {
+  const errors: string[] = [];
+  // Required checks (`== null` covers undefined and null) must come BEFORE the
+  // negativity checks — zero is a valid total, so truthiness is not used here.
+  if (invoice.taxAmount == null) errors.push('taxAmount is required');
+  if (invoice.payableAmount == null) errors.push('payableAmount is required');
+  if (invoice.taxAmount != null && isNegative(invoice.taxAmount)) errors.push('taxAmount must be non-negative');
+  if (invoice.payableAmount != null && isNegative(invoice.payableAmount)) errors.push('payableAmount must be non-negative');
+  errors.push(...allowanceChargeErrors(invoice.allowanceCharges, 'allowanceCharges'));
+  return errors;
+}
 
-  // Amounts
-  if (invoice.taxAmount < 0) errors.push('taxAmount must be non-negative');
-  if (invoice.payableAmount < 0) errors.push('payableAmount must be non-negative');
-  for (const charge of invoice.allowanceCharges ?? []) {
-    if (!charge.reason) errors.push('allowanceCharges.reason is required');
-    if (charge.amount < 0) errors.push('allowanceCharges.amount must be non-negative');
-  }
-
-  // Line items
+/** At least one line, and valid allowance charges on every line. */
+function lineItemErrors(invoice: InvoiceData): string[] {
+  const errors: string[] = [];
   if (!invoice.invoiceLines?.length) errors.push('At least one invoice line is required');
   for (const line of invoice.invoiceLines ?? []) {
-    for (const charge of line.allowanceCharges ?? []) {
-      if (!charge.reason) errors.push('invoiceLines.allowanceCharges.reason is required');
-      if (charge.amount < 0) errors.push('invoiceLines.allowanceCharges.amount must be non-negative');
-    }
+    errors.push(...allowanceChargeErrors(line.allowanceCharges, 'invoiceLines.allowanceCharges'));
   }
+  return errors;
+}
 
-  if (errors.length > 0) {
-    throw new ZatcaError(
-      `Invoice validation failed: ${errors.join('; ')}`,
-      ZatcaErrorCode.VALIDATION_ERROR,
-      { errors },
-    );
+/**
+ * Validate invoice data before XML generation or submission
+ */
+export function validateInvoice(invoice: InvoiceData): void {
+  const errors = [
+    ...requiredHeaderFieldErrors(invoice),
+    ...supplierIdentityErrors(invoice),
+    ...supplierAddressErrors(invoice),
+    ...amountErrors(invoice),
+    ...lineItemErrors(invoice),
+  ];
+  if (errors.length > 0) throwValidationErrors('Invoice', errors);
+}
+
+// ============================================================
+// CSR parameter validators (order defines error order)
+// ============================================================
+
+/**
+ * The CSR VAT number is exactly 15 digits (only checked when present), with
+ * the required error when missing — mirroring the invoice supplier check.
+ */
+function csrVatNumberErrors(vatNumber: string | undefined): string[] {
+  const errors: string[] = [];
+  if (!vatNumber) errors.push('vatNumber is required');
+  if (vatNumber && vatNumber.length !== 15) errors.push('vatNumber must be 15 digits');
+  return errors;
+}
+
+/** Required CSR identity fields, plus the 15-digit VAT check. */
+function csrRequiredFieldErrors(params: CSRParams): string[] {
+  const errors: string[] = [];
+  if (!params.organizationNameAr) errors.push('organizationNameAr is required');
+  if (!params.organizationNameEn) errors.push('organizationNameEn is required');
+  errors.push(...csrVatNumberErrors(params.vatNumber));
+  if (!params.crNumber) errors.push('crNumber is required');
+  if (!params.commonName) errors.push('commonName is required');
+  if (!params.egsSerialNumber) errors.push('egsSerialNumber is required');
+  return errors;
+}
+
+const REQUIRED_LOCATION_FIELDS = [
+  'city',
+  'district',
+  'street',
+  'buildingNumber',
+  'postalCode',
+] as const;
+
+/** Required CSR location fields. */
+function csrLocationErrors(params: CSRParams): string[] {
+  const errors: string[] = [];
+  for (const field of REQUIRED_LOCATION_FIELDS) {
+    if (!params.location?.[field]) errors.push(`location.${field} is required`);
   }
+  return errors;
 }
 
 /**
  * Validate CSR parameters before certificate generation
  */
 export function validateCSRParams(params: CSRParams): void {
-  const errors: string[] = [];
-
-  if (!params.organizationNameAr) errors.push('organizationNameAr is required');
-  if (!params.organizationNameEn) errors.push('organizationNameEn is required');
-  if (!params.vatNumber) errors.push('vatNumber is required');
-  if (params.vatNumber.length !== 15) errors.push('vatNumber must be 15 digits');
-  if (!params.crNumber) errors.push('crNumber is required');
-  if (!params.commonName) errors.push('commonName is required');
-  if (!params.egsSerialNumber) errors.push('egsSerialNumber is required');
-
-  if (!params.location?.city) errors.push('location.city is required');
-  if (!params.location?.district) errors.push('location.district is required');
-  if (!params.location?.street) errors.push('location.street is required');
-  if (!params.location?.buildingNumber) errors.push('location.buildingNumber is required');
-  if (!params.location?.postalCode) errors.push('location.postalCode is required');
-
-  if (errors.length > 0) {
-    throw new ZatcaError(
-      `CSR validation failed: ${errors.join('; ')}`,
-      ZatcaErrorCode.VALIDATION_ERROR,
-      { errors },
-    );
-  }
+  const errors = [
+    ...csrRequiredFieldErrors(params),
+    ...csrLocationErrors(params),
+  ];
+  if (errors.length > 0) throwValidationErrors('CSR', errors);
 }
 
 /**

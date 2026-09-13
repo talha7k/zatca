@@ -85,9 +85,11 @@ function buildCreditNoteXml(creditNote: CreditNoteData): string {
     ? `\n${additionalDocs}\n`
     : '\n';
 
+  // ZATCA requires cac:AccountingCustomerParty even for simplified (B2C)
+  // notes with no buyer details — mirror the invoice builder's empty party.
   const customerBlock = creditNote.customer
     ? `\n${xmlCustomerParty(creditNote.customer)}`
-    : '';
+    : `\n  <cac:AccountingCustomerParty>\n  </cac:AccountingCustomerParty>`;
 
   const creditNoteLineBlocks = creditNote.invoiceLines
     .map((line) => xmlInvoiceLine(line, creditNote.currencyCode))
