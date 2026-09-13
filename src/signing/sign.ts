@@ -105,6 +105,13 @@ export interface SignWithExternalSignerParams {
   signer: ZatcaExternalSigner | ZatcaExternalSignerCallback;
   /** Optional base64 SPKI public key for QR Tag 8. Defaults to the certificate public key. */
   qrPublicKey?: string;
+  /**
+   * Optional pre-extracted certificate info for the xades SignedProperties.
+   * Defaults to parsing certificatePem — pass explicitly when the runtime
+   * cannot parse the certificate natively (e.g. a secp256k1 CSID under a
+   * runtime whose crypto lacks that curve).
+   */
+  certificateInfo?: { issuerName: string; serialNumber: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -289,11 +296,18 @@ interface SigningContext {
   qrData?: QRInvoiceData;
 }
 
+function certificateInfoDigest(certificatePem: string): Pick<CertificateInfoFragment, 'digestValue'> {
+  // Pure SHA-256 over the PEM body — no X.509 parsing, safe on every runtime.
+  const digestHex = crypto.createHash('sha256').update(pemBody(certificatePem), 'utf8').digest('hex');
+  return { digestValue: Buffer.from(digestHex, 'utf8').toString('base64') };
+}
+
 function buildSigningContext(params: {
   xml: string;
   certificatePem: string;
   qrData?: QRInvoiceData;
   publicKey: string;
+  certificateInfo?: { issuerName: string; serialNumber: string };
 }): SigningContext {
   const { xml, certificatePem, qrData, publicKey } = params;
   const ublRoot = getUblRoot(xml);
@@ -306,7 +320,9 @@ function buildSigningContext(params: {
     ublRoot,
     normalizedCertificatePem,
     certificateBase64: pemBody(normalizedCertificatePem),
-    certificateInfo: getCertificateInfo(normalizedCertificatePem),
+    certificateInfo: params.certificateInfo
+      ? { ...certificateInfoDigest(normalizedCertificatePem), ...params.certificateInfo }
+      : getCertificateInfo(normalizedCertificatePem),
     publicKey,
     qrData,
   };
@@ -430,6 +446,7 @@ export async function signInvoiceWithExternalSigner(params: SignWithExternalSign
       certificatePem: normalizedCertificatePem,
       qrData,
       publicKey: params.qrPublicKey ?? extractCertificatePublicKey(normalizedCertificatePem),
+      certificateInfo: params.certificateInfo,
     });
     const sign = resolveExternalSigner(params.signer);
     const buildSignedXml = async (invoiceHash: string): Promise<SignResult> => {
