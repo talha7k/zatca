@@ -627,3 +627,49 @@ export const signInvoiceWithExternalSignerEffect = Effect.fn('signInvoiceWithExt
     });
   },
 );
+
+/** Effect twin of {@link signInvoice}. */
+export const signInvoiceEffect = Effect.fn('signInvoiceEffect')(
+  function* (params: SignParams): Effect.fn.Return<SignResult, ZatcaEffectError> {
+    return yield* Effect.try({
+      try: () => signInvoice(params),
+      catch: toZatcaEffectError,
+    });
+  },
+);
+
+/** Effect twin of {@link computeInvoiceHash}. */
+export const computeInvoiceHashEffect = Effect.fn('computeInvoiceHashEffect')(
+  function* (xml: string): Effect.fn.Return<string, ZatcaEffectError> {
+    return yield* Effect.try({
+      try: () => computeInvoiceHash(xml),
+      catch: toZatcaEffectError,
+    });
+  },
+);
+
+/** Effect twin of {@link canonicalizeForHash}. */
+export const canonicalizeForHashEffect = Effect.fn('canonicalizeForHashEffect')(
+  function* (
+    xml: string,
+    stripQR?: boolean,
+  ): Effect.fn.Return<{ canonical: string; hash: string; hashBase64: string }, ZatcaEffectError> {
+    return yield* Effect.try({
+      try: () => canonicalizeForHash(xml, stripQR),
+      catch: toZatcaEffectError,
+    });
+  },
+);
+
+/** Effect twin of {@link verifySignature}. */
+export const verifySignatureEffect = Effect.fn('verifySignatureEffect')(
+  function* (
+    signedXml: string,
+    publicKeyPem: string,
+  ): Effect.fn.Return<boolean, ZatcaEffectError> {
+    return yield* Effect.try({
+      try: () => verifySignature(signedXml, publicKeyPem),
+      catch: toZatcaEffectError,
+    });
+  },
+);
