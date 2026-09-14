@@ -28,14 +28,14 @@ import type { HashChainState } from '../types.js';
  * NOT part of the hash preimage.
  *
  * @param canonicalXml - The canonical XML string of the current invoice
- * @param previousHash - @deprecated Ignored. Kept only for backwards
+ * @param _previousHash - @deprecated Ignored. Kept only for backwards
  *   compatibility with the previous (incorrect) signature; callers may still
  *   pass it and it has no effect on the result.
  * @returns Base64-encoded SHA-256 digest of the canonical XML (44 chars)
  */
-export function computeNextHash(canonicalXml: string, previousHash?: string): string {
-  // `previousHash` is intentionally unused: the ZATCA invoice hash preimage
-  // is the canonicalized invoice XML alone (the PIH lives inside the document).
+export function computeNextHash(canonicalXml: string, _previousHash?: string): string {
+  // The deprecated second parameter is intentionally unused: the ZATCA invoice
+  // hash preimage is the canonicalized invoice XML alone (the PIH lives inside the document).
   if (!canonicalXml) {
     throw new ZatcaError(
       'canonicalXml is required to compute hash',

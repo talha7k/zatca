@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { extractValidationDiagnostics, assertNoZatcaAlerts } from '../../src/api/diagnostics.js';
 import { parseInvoiceListResponse, parseSubmissionResponse } from '../../src/api/submission-response.js';
-import { ZatcaError } from '../../src/errors.js';
+import { ZatcaError, ZatcaErrorCode } from '../../src/errors.js';
 import type { ZatcaSubmitResult } from '../../src/types.js';
 
 // Fixtures mirror the real ZATCA sandbox responses documented in
@@ -344,7 +344,7 @@ describe('assertNoZatcaAlerts', () => {
       expect.unreachable();
     } catch (error) {
       expect(error).toBeInstanceOf(ZatcaError);
-      expect((error as ZatcaError).code).toBe('API_ERR');
+      expect((error as ZatcaError).code).toBe(ZatcaErrorCode.API_ERROR);
       expect((error as ZatcaError).message).toContain('Reporting failed');
       expect((error as ZatcaError).message).toContain('WARNING BR-KSA-98: submit within 24 hours');
       expect((error as ZatcaError).details).toEqual({
@@ -368,7 +368,7 @@ describe('assertNoZatcaAlerts', () => {
       expect.unreachable();
     } catch (error) {
       expect((error as ZatcaError).message).toBe('Clearance failed: internal error');
-      expect((error as ZatcaError).code).toBe('API_ERR');
+      expect((error as ZatcaError).code).toBe(ZatcaErrorCode.API_ERROR);
     }
   });
 });

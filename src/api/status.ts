@@ -7,7 +7,7 @@
 import { Effect } from 'effect';
 import { ZatcaHttpClient } from './client.js';
 import { ZatcaError, ZatcaErrorCode } from '../errors.js';
-import type { ZatcaApiConfig, ZatcaCredentials } from '../types.js';
+import type { ZatcaCredentials } from '../types.js';
 import { ZatcaApiError, toZatcaEffectError, type ZatcaEffectError } from '../effect/errors.js';
 
 export interface InvoiceStatusResult {

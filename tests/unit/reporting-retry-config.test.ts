@@ -12,7 +12,7 @@ function stubFetchReturningServerError(calls: { count: number }): void {
       text: async () => 'upstream exploded',
       headers: new Headers(),
     };
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
 }
 
 function minimalCredentials() {

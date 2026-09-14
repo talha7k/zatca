@@ -33,12 +33,13 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { generateInvoiceXml, generateCreditNoteXml, generateDebitNoteXml } from '../../src/xml/index.js';
 import { signInvoice, canonicalizeForHash } from '../../src/signing/index.js';
 import { signWithCsid } from './csid-signer.js';
 import type { SignResult, SignWithExternalSignerParams } from '../../src/signing/index.js';
+import type { DecimalInput } from '../../src/types.js';
 import { createTestInvoice, createTestCreditNote } from '../integration/fixtures.js';
 import { TEST_CERT, TEST_PRIVATE_KEY } from './fixtures.js';
 import { formatAmount } from '../../src/utils/xml.js';
@@ -379,7 +380,7 @@ function extractHash(run: SdkRun): string {
 /** Sign any document with the conformance QR data derived from its header. */
 async function signForConformance(
   xml: string,
-  doc: { issueDate: string; issueTime: string; payableAmount: number; taxAmount: number },
+  doc: { issueDate: string; issueTime: string; payableAmount: DecimalInput; taxAmount: DecimalInput },
 ): Promise<string> {
   return (await signWithConfiguredCredentials({
     xml,
@@ -400,7 +401,7 @@ async function signForConformance(
   })).signedXml;
 }
 
-const ARABIC_SELLER_NAME = 'شركة اختبار';
+const ARABIC_SELLER_NAME = 'شركة';
 const SELLER_VAT_NUMBER = '300000000000003';
 
 /** Deterministic supply date for standard-invoice fixtures (KSA-5). */
@@ -459,7 +460,7 @@ describe.skipIf(!SDK_READY)('ZATCA SDK conformance — document matrix', () => {
     const debitNote = {
       ...base,
       invoiceNumber: 'SDN00001',
-      invoiceTypeCode: '383',
+      invoiceTypeCode: '383' as const,
       reason: 'Additional charges',
       supplier: {
         ...base.supplier,

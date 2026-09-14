@@ -60,13 +60,13 @@ describe('xmlSupplierParty / xmlCustomerParty', () => {
 describe('xmlTaxTotalBlocks / xmlMonetaryTotal', () => {
   test('tax totals carry the 2-dp amount and subtotals', () => {
     const blocks = xmlTaxTotalBlocks(invoice.taxAmount, invoice.currencyCode, invoice.taxSubtotals);
-    expect(blocks).toContain(`<cbc:TaxAmount currencyID="SAR">${invoice.taxAmount.toFixed(2)}`);
+    expect(blocks).toContain(`<cbc:TaxAmount currencyID="SAR">${Number(invoice.taxAmount).toFixed(2)}`);
     expect(blocks).toContain('<cac:TaxSubtotal>');
   });
 
   test('monetary total block pins the 2-dp payable amount', () => {
     const totals = xmlMonetaryTotal(invoice);
-    expect(totals).toContain(`<cbc:PayableAmount currencyID="SAR">${invoice.payableAmount.toFixed(2)}`);
+    expect(totals).toContain(`<cbc:PayableAmount currencyID="SAR">${Number(invoice.payableAmount).toFixed(2)}`);
   });
 });
 

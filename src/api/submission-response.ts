@@ -62,7 +62,7 @@ function parseErrorResult(
 
 export function parseInvoiceListResponse(
   response: { status: number; body: string },
-  data: any,
+  data: ReturnType<typeof JSON.parse>,
   options: Pick<SubmissionParseOptions, 'includeReportingStatus' | 'includeClearanceStatus'> = {},
 ): ZatcaSubmitResult | undefined {
   const accepted = data.acceptedInvoices?.[0] as RawInvoiceResult | undefined;
@@ -105,7 +105,7 @@ export function parseInvoiceListResponse(
 export function parseSubmissionResponse(
   response: { status: number; body: string },
   options: SubmissionParseOptions,
-  parseData: (data: any) => ZatcaSubmitResult | undefined,
+  parseData: (data: ReturnType<typeof JSON.parse>) => ZatcaSubmitResult | undefined,
 ): ZatcaSubmitResult {
   try {
     const data = JSON.parse(response.body);

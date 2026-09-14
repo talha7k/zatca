@@ -3,14 +3,14 @@
 ![npm version](https://img.shields.io/npm/v/@talha7k/zatca?style=flat-square)
 ![license](https://img.shields.io/npm/l/@talha7k/zatca?style=flat-square)
 ![typescript](https://img.shields.io/badge/TypeScript-7-blue?style=flat-square)
-![node](https://img.shields.io/badge/Node.js-%3E%3D18-green?style=flat-square)
+![node](https://img.shields.io/badge/Node.js-%3E%3D20.19-green?style=flat-square)
 ![runtime](https://img.shields.io/badge/ESM%20%2B%20CJS-dual-blue?style=flat-square)
 
 **ZATCA Phase 2 e-invoicing integration for Saudi Arabia.**
 
 TypeScript library for Saudi Arabia's ZATCA (Fatoora) e-invoicing system. Covers the full pipeline: UBL 2.1 XML generation, ECDSA digital signing, Phase 1/2 QR encoding, ZATCA API integration, certificate/CSR management, and PIH hash-chain tracking — validated against the **official ZATCA E-Invoicing Java SDK** (byte-identical invoice hashes; XSD + EN16931 + KSA schematron gates).
 
-Framework-agnostic and dual-format: ESM (`dist/`) and CommonJS (`dist.cjs/`) builds ship side by side. Runs on Node.js ≥ 18, Bun, and browsers (via the `./browser` subpath).
+Framework-agnostic and dual-format: ESM (`dist/`) and CommonJS (`dist.cjs/`) builds ship side by side. Runs on Node.js ≥ 20.19, Bun, and browsers (via the `./browser` subpath).
 
 ## Features
 
@@ -275,7 +275,7 @@ Effect consumers get tagged errors instead: `ZatcaApiError`, `ZatcaConnectionErr
 
 ## Requirements
 
-- Node.js ≥ 18 (native `fetch`, `crypto`) — also runs on Bun; browser via `./browser`
+- Node.js ≥ 20.19 (native `fetch`, `crypto`, require(esm) for the CJS build) — also runs on Bun; browser via `./browser`
 
 ## License
 

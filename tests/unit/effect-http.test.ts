@@ -62,7 +62,7 @@ describe('ZatcaHttp service · request execution', () => {
   test('test layer injects a stub fetch without touching globalThis.fetch', async () => {
     const sentinel: typeof fetch = (async () => {
       throw new Error('real network access attempted');
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     globalThis.fetch = sentinel;
 
     const calls: Array<string> = [];
@@ -91,7 +91,7 @@ describe('ZatcaHttp service · connection error mapping', () => {
     });
     globalThis.fetch = (async () => {
       throw failure;
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const program = Effect.gen(function*() {
       const http = yield* ZatcaHttp;
@@ -114,7 +114,7 @@ describe('ZatcaHttp service · connection error mapping', () => {
   test('keeps the plain message when the failure has no cause', async () => {
     globalThis.fetch = (async () => {
       throw new Error('fetch failed');
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const program = Effect.gen(function*() {
       const http = yield* ZatcaHttp;
@@ -132,7 +132,7 @@ describe('ZatcaHttp service · timeouts', () => {
   test('maps a timeout to ZatcaTimeoutError with the legacy message, deterministically via TestClock', async () => {
     // Never-settling fetch: the request only completes (as a timeout) when the
     // TestClock advances past the configured timeout.
-    globalThis.fetch = (async () => new Promise<Response>(() => {})) as typeof fetch;
+    globalThis.fetch = (async () => new Promise<Response>(() => {})) as unknown as typeof fetch;
 
     const program = Effect.gen(function*() {
       const http = yield* ZatcaHttp;
@@ -148,7 +148,7 @@ describe('ZatcaHttp service · timeouts', () => {
   });
 
   test('per-request timeoutMs overrides the layer default', async () => {
-    globalThis.fetch = (async () => new Promise<Response>(() => {})) as typeof fetch;
+    globalThis.fetch = (async () => new Promise<Response>(() => {})) as unknown as typeof fetch;
 
     const program = Effect.gen(function*() {
       const http = yield* ZatcaHttp;

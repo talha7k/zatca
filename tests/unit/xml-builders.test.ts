@@ -403,7 +403,7 @@ describe('generateCreditNoteXml · models credit notes on the Invoice root', () 
 describe('generateDebitNoteXml (383)', () => {
   test('emits a 383-typed note with the BillingReference intact', () => {
     const note = { ...baseCreditNote(), invoiceTypeCode: '383' };
-    const doc = parse(generateDebitNoteXml(note));
+    const doc = parse(generateDebitNoteXml(note as CreditNoteData));
     expect(doc.Invoice['cbc:InvoiceTypeCode']['#text'] ?? doc.Invoice['cbc:InvoiceTypeCode']).toBe('383');
     expect(doc.Invoice['cac:BillingReference']).toBeDefined();
   });

@@ -155,7 +155,6 @@ function expectZatcaSignError(action: () => unknown, message: string): void {
   const zatcaError = caught as ZatcaError;
   expect(zatcaError.message).toBe(message);
   expect(zatcaError.code).toBe(ZatcaErrorCode.SIGN_ERROR);
-  expect(zatcaError.code).toBe('SIGN_ERR');
 }
 
 /** Extract and decode the QR TLV payload embedded in the signed XML. */
@@ -193,7 +192,6 @@ describe('createExternalSignerUnavailableError', () => {
       'Browser external-signer XMLDSig support has not been wired yet. Use this package surface for non-exportable Web Crypto signer integration.',
     );
     expect(error.code).toBe(ZatcaErrorCode.SIGN_ERROR);
-    expect(error.code).toBe('SIGN_ERR');
   });
 });
 

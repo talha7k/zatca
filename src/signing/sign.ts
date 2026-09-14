@@ -184,14 +184,6 @@ function extractSpkiPublicKeyFromKey(key: crypto.KeyObject): string {
   return Buffer.from(spkiDer).toString('base64');
 }
 
-function extractRawPublicKeyFromKey(key: crypto.KeyObject): string {
-  return Buffer.from(key.export({ type: 'spki', format: 'der' })).slice(-65).toString('base64');
-}
-
-function extractPrivateKeyRawPublicKey(privateKeyPem: string): string {
-  return extractRawPublicKeyFromKey(crypto.createPublicKey(privateKeyPem));
-}
-
 function extractQrPublicKey(certificatePem: string, privateKeyPem: string): string {
   const privateKey = crypto.createPublicKey(privateKeyPem);
   const privateKeyPublicKey = extractSpkiPublicKeyFromKey(privateKey);
@@ -411,7 +403,7 @@ export function signInvoice(params: SignParams): SignResult {
       return buildSignedXmlWithSignature(context, invoiceHash, signatureValue, signingTime);
     };
 
-    let invoiceHash = canonicalizeForHash(xml).hashBase64;
+    const invoiceHash = canonicalizeForHash(xml).hashBase64;
     let signed = buildSignedXml(invoiceHash);
     const finalHash = canonicalizeForHash(signed.signedXml).hashBase64;
     if (finalHash !== invoiceHash) {
@@ -460,7 +452,7 @@ export async function signInvoiceWithExternalSigner(params: SignWithExternalSign
       return buildSignedXmlWithSignature(context, invoiceHash, signatureValue, signingTime);
     };
 
-    let invoiceHash = canonicalizeForHash(xml).hashBase64;
+    const invoiceHash = canonicalizeForHash(xml).hashBase64;
     let signed = await buildSignedXml(invoiceHash);
     const finalHash = canonicalizeForHash(signed.signedXml).hashBase64;
     if (finalHash !== invoiceHash) {
@@ -493,14 +485,6 @@ export async function signInvoiceWithExternalSigner(params: SignWithExternalSign
  */
 export function computeInvoiceHash(xml: string): string {
   return canonicalizeForHash(xml).hash;
-}
-
-/**
- * Compute SHA-256 hash of invoice XML as base64-encoded raw bytes.
- * This is the format ZATCA expects for API body `invoiceHash` and PIH.
- */
-function computeInvoiceHashBase64(xml: string): string {
-  return canonicalizeForHash(xml).hashBase64;
 }
 
 /**

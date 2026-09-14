@@ -42,8 +42,11 @@ describe('package export surface', () => {
 
   test('./hash-chain subpath mirrors the chain module', async () => {
     const hc = await import('../../src/hash-chain/index.js');
-    expect(hc.DEFAULT_COMPLIANCE_PREVIOUS_INVOICE_HASH ?? hc).toBeTruthy();
-    expect(hc.computeNextHash).toBeFunction();
+    // DEFAULT_COMPLIANCE_PREVIOUS_INVOICE_HASH lives in ./compliance, not here —
+    // the hash-chain barrel mirrors chain.ts only.
+    for (const name of ['initializeHashChain', 'advanceHashChain', 'computeNextHash', 'validateHashChain']) {
+      expect(hc, `hash-chain export missing: ${name}`).toHaveProperty(name);
+    }
   });
 
   test('./browser subpath exposes the browser-safe surface', async () => {

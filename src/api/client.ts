@@ -13,7 +13,6 @@
 
 import { Effect } from 'effect';
 import type {
-  ZatcaEnvironment,
   ZatcaApiConfig,
   ZatcaCredentials,
 } from '../types.js';

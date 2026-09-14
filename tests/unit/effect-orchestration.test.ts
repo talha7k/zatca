@@ -118,7 +118,7 @@ function stubZatcaOk(body: unknown, status = 200): Array<CapturedCall> {
 function stubFetchFailure(error: Error): void {
   globalThis.fetch = (async () => {
     throw error;
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
 }
 
 const connectionFailure = Object.assign(new Error('fetch failed'), {

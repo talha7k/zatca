@@ -2,9 +2,14 @@ import { defineConfig } from 'tsup';
 
 /**
  * CJS companion build. `tsc` (npm run build) remains the source of truth for
- * the ESM `dist/`; this emits a CommonJS mirror into `dist.cjs/` so
- * `require('@talha7k/zatca')` keeps working for CJS consumers (Effect v4 is
- * ESM-only — the CJS build dynamic-imports nothing; tsup bundles it).
+ * the ESM `dist/`; this emits a CommonJS mirror into `dist.cjs/` so that
+ * `require('@talha7k/zatca')` keeps working for CJS consumers.
+ *
+ * `dependencies` (incl. `effect`) are external — they resolve from the
+ * consumer's node_modules. Note: effect v4 is ESM-only, so CJS entries that
+ * touch it (`.`, `./effect`, `./browser`, `./qrcode`) rely on require(esm)
+ * and need Node ≥ 20.19; `./hash-chain` and `./signing/p1363-to-der` are
+ * effect-free and work on any supported Node.
  */
 export default defineConfig({
   entry: [
