@@ -148,7 +148,12 @@ describe('retrySchedule · fail-fast & retryMax limits', () => {
 
 describe('retrySchedule · default & custom backoff config', () => {
   test('defaults to 3 retries with backoff delays [5000, 30000, 300000] within jitter bounds', async () => {
-    const delays = await stepDelays(retrySchedule(), apiError5xx(), 3, 1);
+    const delays = await stepDelays(
+      retrySchedule() as Schedule.Schedule<Duration.Duration, ZatcaEffectError>,
+      apiError5xx(),
+      3,
+      1,
+    );
     expect(delays).toHaveLength(3);
     delays.forEach((ms, i) => {
       const configured = [5000, 30000, 300000][i];
@@ -168,7 +173,7 @@ describe('retrySchedule · default & custom backoff config', () => {
 
   test('honors a custom retryMax/retryBackoffMs pair and clamps past the array end', async () => {
     const delays = await stepDelays(
-      retrySchedule({ retryMax: 4, retryBackoffMs: [10, 20] }),
+      retrySchedule({ retryMax: 4, retryBackoffMs: [10, 20] }) as Schedule.Schedule<Duration.Duration, ZatcaEffectError>,
       apiError5xx(),
       4,
       2,
@@ -185,13 +190,13 @@ describe('retrySchedule · default & custom backoff config', () => {
 describe('retrySchedule · jitter determinism & bounds', () => {
   test('jitter is deterministic for a fixed seed (same seed, same delays)', async () => {
     const first = await stepDelays(
-      retrySchedule({ retryMax: 3, retryBackoffMs: [1000, 2000, 3000] }),
+      retrySchedule({ retryMax: 3, retryBackoffMs: [1000, 2000, 3000] }) as Schedule.Schedule<Duration.Duration, ZatcaEffectError>,
       timeoutError(),
       3,
       'zatca-test-seed',
     );
     const second = await stepDelays(
-      retrySchedule({ retryMax: 3, retryBackoffMs: [1000, 2000, 3000] }),
+      retrySchedule({ retryMax: 3, retryBackoffMs: [1000, 2000, 3000] }) as Schedule.Schedule<Duration.Duration, ZatcaEffectError>,
       timeoutError(),
       3,
       'zatca-test-seed',
@@ -210,7 +215,7 @@ describe('retrySchedule · jitter determinism & bounds', () => {
     let checked = 0;
     for (let sample = 0; sample < 200; sample++) {
       const delays = await stepDelays(
-        retrySchedule({ retryMax: 2, retryBackoffMs: configured }),
+        retrySchedule({ retryMax: 2, retryBackoffMs: configured }) as Schedule.Schedule<Duration.Duration, ZatcaEffectError>,
         apiError5xx(),
         2,
         sample,

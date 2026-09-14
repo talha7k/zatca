@@ -86,7 +86,9 @@ describe('signBrowserInvoiceWithExternalSignerEffect', () => {
       xml: '<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"></Invoice>',
       certificatePem: TEST_CERT,
       certificateInfo: { issuerName: 'CN=testca', serialNumber: '1' },
-      signer: base64DerSigner,
+      qrPublicKey: 'A0F3',
+      // Browser signer API takes the ZatcaExternalSigner object (not the bare callback).
+      signer: { sign: base64DerSigner },
     })));
     expect(error).toBeInstanceOf(ZatcaError);
   });

@@ -125,7 +125,7 @@ describe.skipIf(reason !== undefined)(`sandbox submission (live gateway)${reason
       // 'reporting:1.0' with a stale "must be reporting:1.0" message —
       // standard (B2B) documents clear with 'clearance:1.0'.
       profileId: 'clearance:1.0' as const,
-      invoiceTypeCodeName: '0100000',
+      invoiceTypeCodeName: '0100000' as const,
       supplyDate: base.issueDate,
       paymentMeansCode: 10,
       supplier: {

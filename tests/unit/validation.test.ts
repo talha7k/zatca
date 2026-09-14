@@ -157,11 +157,11 @@ describe('validateInvoice (characterization)', () => {
     const invoice = makeInvoice();
     const supplier = { ...invoice.supplier } as Record<string, unknown>;
     if (field === 'city' || field === 'street' || field === 'postalCode') {
-      supplier.address = { ...supplier.address, [field]: undefined } as typeof invoice.supplier.address;
+      supplier.address = { ...(supplier.address as Record<string, unknown>), [field]: undefined } as unknown as typeof invoice.supplier.address;
     } else {
       supplier[field] = undefined;
     }
-    invoice.supplier = supplier as typeof invoice.supplier;
+    invoice.supplier = supplier as unknown as typeof invoice.supplier;
     const captured = captureValidationError(() => validateInvoice(invoice));
     expect(captured.details?.errors).toEqual([expectedError]);
   });

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import crypto from 'crypto';
 import { generatePhase1QRCodeData, generateQRCodeData } from '../../src/qrcode/generate.js';
-import { ZatcaError } from '../../src/errors.js';
+import { ZatcaError, ZatcaErrorCode } from '../../src/errors.js';
 import type { Phase1QRData, Phase2QRData } from '../../src/types.js';
 
 // ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ describe('QR TLV — Phase 1 · BER-TLV length forms & fallbacks', () => {
     try {
       generatePhase1QRCodeData({ ...PHASE1, sellerName: '  ' });
     } catch (error) {
-      expect((error as ZatcaError).code).toBe('QR_GEN_ERR');
+      expect((error as ZatcaError).code).toBe(ZatcaErrorCode.QR_GEN_ERROR);
     }
   });
 });

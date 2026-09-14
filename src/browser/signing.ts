@@ -129,7 +129,7 @@ export async function signBrowserInvoiceWithExternalSigner(params: SignBrowserIn
       const signatureValue = assertExternalSignerResult(result);
       return buildSignedXmlWithSignature(context, invoiceHash, signedInfoXml, signatureValue, signingTime);
     };
-    let invoiceHash = (await canonicalizeForHash(params.xml, subtle)).hashBase64;
+    const invoiceHash = (await canonicalizeForHash(params.xml, subtle)).hashBase64;
     let signed = await buildSignedXml(invoiceHash);
     const finalHash = (await canonicalizeForHash(signed.signedXml, subtle))
       .hashBase64;
@@ -137,10 +137,11 @@ export async function signBrowserInvoiceWithExternalSigner(params: SignBrowserIn
       signed = await buildSignedXml(finalHash);
     }
     return signed;
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof ZatcaError)
       throw error;
-    throw new ZatcaError(`Failed to sign browser invoice with external signer: ${error.message}`, ZatcaErrorCode.SIGN_ERROR, error);
+    const message = error instanceof Error ? error.message : String(error);
+    throw new ZatcaError(`Failed to sign browser invoice with external signer: ${message}`, ZatcaErrorCode.SIGN_ERROR, error);
   }
 }
 

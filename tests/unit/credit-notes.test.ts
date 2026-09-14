@@ -237,7 +237,7 @@ describe('ZATCA credit notes · reporting error alerts', () => {
         }),
         { status: 400, headers: { 'content-type': 'application/json' } },
       );
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const client = new ZatcaApiClient({
       environment: 'sandbox',

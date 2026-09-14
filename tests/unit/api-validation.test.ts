@@ -162,7 +162,7 @@ describe('submitInvoice alias', () => {
         }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
-        })) as typeof fetch;
+        })) as unknown as typeof fetch;
       const result = await submitInvoice({
         invoice: createTestInvoice(),
         privateKeyPem: TEST_PRIVATE_KEY,

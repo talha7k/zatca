@@ -14,7 +14,7 @@ const realFetch = globalThis.fetch;
 function stubFetchRejecting(error: Error): void {
   globalThis.fetch = (async () => {
     throw error;
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
 }
 
 describe('ZatcaHttpClient connection error cause enrichment', () => {

@@ -2,7 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.13.1] - 2026-09-14
 
+### Changed
+- `@talha7k/zatca-qr` dependency floor raised to `^1.3.0`
+- Node.js engine floor raised to ≥ 20.19 (the CJS build's `require('effect')` needs require(esm); ESM consumers are unaffected by this constraint)
+- Published tarball no longer ships source maps — package size reduced ~58% (322 kB → 136 kB)
+- Test suite is now fully type-checked (`tsc` covers `tests/`); 42 pre-existing type errors resolved, including a missing `readFileSync` import in the SDK conformance harness
+- ESLint 10 + typescript-eslint toolchain added (`npm run lint`); tests are type-checked but excluded from lint scope
+- Removed dead helpers from the signing module
+
+### Fixed
+- SDK conformance QR fixture keeps the embedded QR safely under the KSA-14 500-character limit (previously sat at the boundary and could fail intermittently)
 
 ## [0.13.0] - 2026-09-14
 

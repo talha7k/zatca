@@ -1,7 +1,7 @@
 import type { CSRParams, CreditNoteData, InvoiceData } from '../../src/types.js';
 
 export const TEST_CSR_PARAMS: CSRParams = {
-  organizationNameAr: 'شركة اختبار',
+  organizationNameAr: 'شركة',
   organizationNameEn: 'Test Company',
   vatNumber: '300000000000003', // 15 digits starting and ending with 3
   crNumber: '1010010000',
@@ -25,7 +25,7 @@ export const TEST_CSR_PARAMS: CSRParams = {
 
 function defaultSupplier(): InvoiceData['supplier'] {
   return {
-    nameAr: 'شركة اختبار',
+    nameAr: 'شركة',
     nameEn: 'Test Company',
     vatNumber: '300000000000003',
     crNumber: '1010010000',

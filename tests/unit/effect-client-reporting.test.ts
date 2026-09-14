@@ -158,7 +158,7 @@ describe('ZatcaHttpClient promise back-compat', () => {
     });
     globalThis.fetch = (async () => {
       throw failure;
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const client = new TestHttpClient({ environment: 'sandbox' });
 
@@ -179,7 +179,7 @@ describe('ZatcaHttpClient promise back-compat', () => {
   });
 
   test('promise request maps timeouts to ZatcaError with the legacy message', async () => {
-    globalThis.fetch = (async () => new Promise<Response>(() => {})) as typeof fetch;
+    globalThis.fetch = (async () => new Promise<Response>(() => {})) as unknown as typeof fetch;
 
     const client = new TestHttpClient({ environment: 'sandbox', timeout: 20 });
 

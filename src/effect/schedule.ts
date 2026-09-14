@@ -17,9 +17,6 @@
 
 import { Duration, Effect, Schedule } from 'effect';
 import {
-  ZatcaApiError,
-  ZatcaConnectionError,
-  ZatcaTimeoutError,
   type ZatcaEffectError,
 } from './errors.js';
 

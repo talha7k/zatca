@@ -179,8 +179,8 @@ function createQrData(invoiceData: InvoiceData, binarySecurityToken: string) {
     sellerName: invoiceData.supplier.nameAr,
     vatNumber: invoiceData.supplier.vatNumber,
     timestamp: `${invoiceData.issueDate}T${invoiceData.issueTime}`,
-    totalWithVat: invoiceData.taxInclusiveAmount.toFixed(2),
-    vatTotal: invoiceData.taxAmount.toFixed(2),
+    totalWithVat: Number(invoiceData.taxInclusiveAmount).toFixed(2),
+    vatTotal: Number(invoiceData.taxAmount).toFixed(2),
     certificateSignature: certSignature,
   };
 
@@ -407,8 +407,8 @@ describe('ZATCA Sandbox · Step 4b: credit note compliance', () => {
         sellerName: creditNoteData.supplier.nameAr,
         vatNumber: creditNoteData.supplier.vatNumber,
         timestamp: `${creditNoteData.issueDate}T${creditNoteData.issueTime}`,
-        totalWithVat: creditNoteData.taxInclusiveAmount.toFixed(2),
-        vatTotal: creditNoteData.taxAmount.toFixed(2),
+        totalWithVat: Number(creditNoteData.taxInclusiveAmount).toFixed(2),
+        vatTotal: Number(creditNoteData.taxAmount).toFixed(2),
         certificateSignature: certSignature,
       },
     });

@@ -236,7 +236,10 @@ describe('buildPhase2QrTlvBytes (shared)', () => {
   test('defaults vatTotal to "0.00" when absent', () => {
     const { vatTotal: _omitted, ...withoutVatTotal } = QR_INPUT;
     const bytes = buildPhase2QrTlvBytes(withoutVatTotal, bufferCodecs);
-    expect(Buffer.from(bytes).toString('base64')).toBe(refQrBase64(withoutVatTotal));
+    // buildPhase2QrTlvBytes must default the omitted vatTotal to '0.00';
+    // the reference encoder is given that same default explicitly (its
+    // parameter type requires the field, unlike the shared builder's).
+    expect(Buffer.from(bytes).toString('base64')).toBe(refQrBase64({ ...withoutVatTotal, vatTotal: '0.00' }));
   });
 });
 

@@ -27,14 +27,14 @@ function rejectedCsid(code: string, message: string): ZatcaCSIDResponse {
   };
 }
 
-function requestIdFrom(data: any): string | undefined {
+function requestIdFrom(data: ReturnType<typeof JSON.parse>): string | undefined {
   if (data.requestID != null) return String(data.requestID);
   if (data.requestId != null) return String(data.requestId);
   return undefined;
 }
 
 function parseCsidResponse(response: { status: number; body: string }): ZatcaCSIDResponse {
-  let data: any;
+  let data: ReturnType<typeof JSON.parse>;
   try {
     data = JSON.parse(response.body);
   } catch {
@@ -140,7 +140,7 @@ export class ComplianceApi extends ZatcaHttpClient {
         catch: toZatcaEffectError,
       });
 
-      let data: any;
+      let data: ReturnType<typeof JSON.parse>;
       try {
         data = JSON.parse(response.body);
       } catch {
