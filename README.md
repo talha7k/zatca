@@ -285,6 +285,12 @@ copyright holder of this library.
 [![GitHub](https://img.shields.io/badge/GitHub-talha7k-181717?style=flat-square&logo=github)](https://github.com/talha7k)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-talha7k-0A66C2?style=flat-square&logo=linkedin)](https://linkedin.com/in/talha7k)
 
+**Attribution requirement (AGPL-3.0 §7(b)):** as an additional term under
+section 7(b) of the GNU AGPL v3, you must preserve this author attribution
+notice — including the GitHub and LinkedIn links above — in copies and
+derivative works of this library that you convey, distribute, or make
+available to users over a network.
+
 ## License
 
 [AGPL-3.0-only](./LICENSE) © Talha Khan

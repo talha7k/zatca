@@ -1,6 +1,6 @@
 {
   "name": "@talha7k/zatca",
-  "version": "0.13.1",
+  "version": "0.13.2",
   "description": "ZATCA Phase 2 e-invoicing integration for Saudi Arabia — TypeScript, framework-agnostic, production-grade",
   "type": "module",
   "main": "./dist/index.js",
@@ -110,7 +110,7 @@
     "ber-tlv"
   ],
   "author": {
-    "name": "talha7k",
+    "name": "Talha Khan (talha7k)",
     "email": "talha7k@gmail.com",
     "url": "https://github.com/talha7k"
   },
