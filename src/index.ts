@@ -15,6 +15,9 @@
 // Types
 export type * from './types.js';
 
+// Package version
+export const VERSION = '0.13.2';
+
 // Errors
 export { ZatcaError, ZatcaErrorCode } from './errors.js';
 

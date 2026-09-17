@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.13.2] - 2026-09-17
+
+### Added
+- **`VERSION` export** — programmatic access to the package version from the root barrel: `import { VERSION } from '@talha7k/zatca'` (also on the CJS build's `require('@talha7k/zatca').VERSION`). Matches `package.json` exactly; asserted by the test suite.
+- Package metadata (lockfile root version fields) resynchronized with the published version.
+
+### Attribution
+- This library is created and maintained by **Talha Khan** (talha7k) —
+  [GitHub](https://github.com/talha7k) · [LinkedIn](https://linkedin.com/in/talha7k).
+  Please preserve this attribution — including both profile links — in copies,
+  derivative works, and network services built on this library.
+
 ## [0.13.1] - 2026-09-14
 
 ### Changed
