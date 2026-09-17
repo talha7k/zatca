@@ -277,6 +277,14 @@ Effect consumers get tagged errors instead: `ZatcaApiError`, `ZatcaConnectionErr
 
 - Node.js ≥ 20.19 (native `fetch`, `crypto`, require(esm) for the CJS build) — also runs on Bun; browser via `./browser`
 
+## Author
+
+Created and maintained by **Talha Khan** (talha7k) — original author and sole
+copyright holder of this library.
+
+[![GitHub](https://img.shields.io/badge/GitHub-talha7k-181717?style=flat-square&logo=github)](https://github.com/talha7k)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-talha7k-0A66C2?style=flat-square&logo=linkedin)](https://linkedin.com/in/talha7k)
+
 ## License
 
-[AGPL-3.0-only](./LICENSE) © talha7k
+[AGPL-3.0-only](./LICENSE) © Talha Khan
