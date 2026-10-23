@@ -9,8 +9,6 @@ tests/integration/debug-*
 config.bat
 
 # env files (never commit — 0.11.1 incident)
-.env
-.env.*
 
 # SDK conformance harness temp files
 .tmp-sdk-conformance/
