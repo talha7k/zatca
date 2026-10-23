@@ -1,0 +1,89 @@
+#!/bin/sh
+# ──────────────────────────────────────────────────────────────────────────
+# Pre-commit: malware/implant + secret tripwire for STAGED changes.
+#
+# Context: this repo's eslint.config.mjs once carried an obfuscated dropper
+# (campaign "A9-1730") that executed on every lint run. This hook scans the
+# ADDED lines of every staged file for that implant's fingerprints and for
+# generic code-execution/obfuscation patterns, plus a best-effort gitleaks
+# secret scan when the binary is installed.
+#
+# Fast by design (<3s): staged diff only, lockfiles skipped, no dependencies.
+# The authoritative gate is CI (runs the same scan + gitleaks on the full
+# repo). Bypass with `git commit --no-verify` — CI will still catch it.
+#
+# Install (once per clone):  git config core.hooksPath scripts/githooks
+# or:                        pnpm setup:hooks
+#
+# Adding a new IOC: extend the PATTERNS list below, one regex per line.
+# ──────────────────────────────────────────────────────────────────────────
+set -u
+
+# Single source of truth for fingerprints: scripts/malware-patterns.txt
+# (shared with the CI scanner, scripts/scan-malware.mjs).
+PATTERNS_FILE="$(git rev-parse --show-toplevel)/scripts/malware-patterns.txt"
+PATTERNS="$(grep -vE '^\s*(#|$)' "$PATTERNS_FILE")"
+
+# Added lines of the staged diff (lockfiles skipped — gitleaks owns secrets
+# there; binary files drop out naturally as non-matching text; *.md and the
+# IOC database itself are exempt — inert/data). Pure comment lines (#, //,
+# /*, *) are exempt — they're inert, and the incident documentation in
+# eslint.config.mjs and this hook's header legitimately name the IOCs.
+DIFF_ADDED="$(git diff --cached -U0 -- . ':(exclude)pnpm-lock.yaml' ':(exclude)package-lock.json' ':(exclude)*.md' ':(exclude)scripts/malware-patterns.txt' 2>/dev/null | grep '^+' | grep -v '^+++' | grep -vE '^\+\s*(//|\*|/\*|#)')"
+
+[ -z "$DIFF_ADDED" ] && exit 0 # nothing added (deletes/renames only)
+
+HITS_FILE="$(mktemp)"
+trap 'rm -f "$HITS_FILE"' EXIT
+
+printf '%s\n' "$PATTERNS" | while IFS= read -r pattern; do
+  [ -z "$pattern" ] && continue
+  MATCHES="$(printf '%s\n' "$DIFF_ADDED" | grep -InE "$pattern" | head -5)"
+  if [ -n "$MATCHES" ]; then
+    echo "━━━ MALWARE/IMPLANT PATTERN MATCHED IN STAGED CHANGES ━━━"
+    echo "$MATCHES" | sed 's/^/    /'
+    echo "    (pattern: $pattern)"
+    echo 1 >"$HITS_FILE"
+  fi
+done
+
+if [ -s "$HITS_FILE" ]; then
+  echo ""
+  echo "❌  Commit BLOCKED: staged changes match malware/implant fingerprints."
+  echo "    Review the matches above. If this is a false positive (e.g. you are"
+  echo "    editing this hook or a security test), use:"
+  echo "      git commit --no-verify   # CI runs the same scan and will still catch real implants"
+  exit 1
+fi
+
+# Layer 2: dependency vulnerability + install-script supply-chain gate.
+# Lockfile lifecycle-script detection is a HARD gate (the 2026-10-23
+# re-infection class); known-CVE output is advisory locally unless
+# DEP_AUDIT_STRICT=1. Skipped when no dependency files are staged so
+# non-dependency commits stay fast; CI runs it on every push regardless.
+STAGED_DEPS="$(git diff --cached --name-only -- package.json pnpm-lock.yaml pnpm-workspace.yaml)"
+if [ -n "$STAGED_DEPS" ]; then
+  echo "📦 dep-audit: dependency files staged — running supply-chain scan…"
+  if ! node "$(git rev-parse --show-toplevel)/scripts/dep-audit.mjs"; then
+    echo "❌  Commit BLOCKED: dependency audit failed (see above)."
+    echo "    Lifecycle-script / network-fetch findings must be resolved."
+    echo "    If genuinely expected: git commit --no-verify (CI re-checks)."
+    exit 1
+  fi
+fi
+
+# Layer 3: secrets via gitleaks when available (staged-only mode). Advisory
+# locally; CI runs the authoritative full scan either way.
+if command -v gitleaks >/dev/null 2>&1; then
+  echo "🔒 gitleaks: scanning staged changes…"
+  if ! gitleaks git --pre-commit --staged --redact -v >/dev/null 2>&1; then
+    echo "❌  Commit BLOCKED: gitleaks found likely secrets in staged changes."
+    echo "    Re-run with: gitleaks git --pre-commit --staged -v"
+    echo "    Rotate anything real; inline '# gitleaks:allow' only for confirmed false positives."
+    exit 1
+  fi
+else
+  echo "ℹ️  gitleaks not installed — secret scan skipped locally (CI covers it). Install: brew install gitleaks"
+fi
+
+exit 0
